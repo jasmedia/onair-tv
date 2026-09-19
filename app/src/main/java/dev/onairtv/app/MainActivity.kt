@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +23,7 @@ import dev.onairtv.app.ui.ChannelsScreen
 import dev.onairtv.app.ui.ErrorScreen
 import dev.onairtv.app.ui.LoadingScreen
 import dev.onairtv.app.ui.PlayerScreen
+import dev.onairtv.app.ui.PlaylistsScreen
 import dev.onairtv.app.ui.SetupScreen
 
 class MainActivity : ComponentActivity() {
@@ -46,30 +47,59 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
 
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val activeUrl by vm.activeUrl.collectAsStateWithLifecycle()
+
+    var showPlaylists by rememberSaveable { mutableStateOf(false) }
     var showSetup by rememberSaveable { mutableStateOf(false) }
     var selectedGroup by rememberSaveable { mutableStateOf(ALL_CHANNELS) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var playback by remember { mutableStateOf<Playback?>(null) }
     var focusUrl by remember { mutableStateOf(vm.lastChannelUrl) }
-    val channelListState = rememberLazyListState()
+    // Replaced on playlist switch, so the new list doesn't open at the old scroll position.
+    var channelListState by remember { mutableStateOf(LazyListState()) }
+
+    // Called when a different playlist becomes current: browsing starts over.
+    val resetBrowsing = {
+        selectedGroup = ALL_CHANNELS
+        searchQuery = ""
+        channelListState = LazyListState()
+    }
+    val onPlaylistOpened = {
+        showSetup = false
+        showPlaylists = false
+        resetBrowsing()
+    }
 
     when (val s = state) {
         PlaylistState.NotConfigured -> SetupScreen(
-            initialUrl = vm.playlistUrl.orEmpty(),
-            onSubmit = { url -> vm.loadPlaylist(url); selectedGroup = ALL_CHANNELS; searchQuery = "" },
+            onSubmit = { url, name -> vm.addPlaylist(url, name); onPlaylistOpened() },
             onCancel = null,
         )
 
         else -> if (showSetup) {
             SetupScreen(
-                initialUrl = vm.playlistUrl.orEmpty(),
-                onSubmit = { url ->
-                    vm.loadPlaylist(url)
-                    selectedGroup = ALL_CHANNELS
-                    searchQuery = ""
-                    showSetup = false
-                },
+                onSubmit = { url, name -> vm.addPlaylist(url, name); onPlaylistOpened() },
                 onCancel = { showSetup = false },
+            )
+        } else if (showPlaylists) {
+            PlaylistsScreen(
+                playlists = playlists,
+                activeUrl = activeUrl,
+                onSelect = { playlist ->
+                    if (playlist.url != activeUrl) {
+                        vm.selectPlaylist(playlist)
+                        onPlaylistOpened()
+                    } else {
+                        showPlaylists = false
+                    }
+                },
+                onRemove = { playlist ->
+                    if (playlist.url == activeUrl) resetBrowsing()
+                    vm.removePlaylist(playlist)
+                },
+                onAdd = { showSetup = true },
+                onBack = { showPlaylists = false },
             )
         } else when (s) {
             PlaylistState.Loading -> LoadingScreen()
@@ -77,7 +107,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
             is PlaylistState.Failed -> ErrorScreen(
                 message = s.message,
                 onRetry = vm::retry,
-                onChangePlaylist = { showSetup = true },
+                onChangePlaylist = { showPlaylists = true },
             )
 
             is PlaylistState.Ready -> {
@@ -96,7 +126,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         onPlay = { list, position ->
                             playback = Playback(list, position)
                         },
-                        onChangePlaylist = { showSetup = true },
+                        onChangePlaylist = { showPlaylists = true },
                     )
                 } else {
                     PlayerScreen(

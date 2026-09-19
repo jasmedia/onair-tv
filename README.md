@@ -9,7 +9,9 @@ full-screen with remote-control zapping.
 ## Features in this MVP
 
 - Add a playlist by URL, or pick one of the iptv-org presets (India, Malayalam, News, All).
-- The playlist is cached on disk, so the app opens instantly and refreshes in the background.
+- Multiple saved playlists: **Playlists** (on the channel list) switches between them, adds new
+  ones, or removes them (press ▶ on a playlist to reach its Remove button).
+- Each playlist is cached on disk, so the app opens instantly and refreshes in the background.
 - Channel browser: a group list on the left and channels with logos on the right.
 - Favorites: hold OK on a channel (in the list or while watching) to star it. Starred channels
   appear in the **★ Favorites** group.
@@ -35,9 +37,11 @@ app/src/main/java/dev/onairtv/app/
 ├── data/
 │   ├── M3uParser.kt         # extended-M3U parser → List<Channel>
 │   ├── ChannelSearch.kt     # channel-name search (case/accent-insensitive)
+│   ├── SavedPlaylists.kt    # saved-playlist list: storage format, default names
 │   └── PlaylistRepository.kt# download, disk cache, preferences, favorites
 └── ui/
     ├── SetupScreens.kt      # add-playlist, loading, error screens
+    ├── PlaylistsScreen.kt   # saved playlists: switch, add, remove
     ├── ChannelsScreen.kt    # groups + channel list (D-pad focus handling)
     └── PlayerScreen.kt      # ExoPlayer, zapping, channel banner
 ```
@@ -57,14 +61,15 @@ flowchart TB
     subgraph Data["data/"]
         REPO["PlaylistRepository<br/>OkHttp download"]
         PARSER["M3uParser<br/>text → List&lt;Channel&gt;<br/>+ User-Agent / Referer"]
-        CACHE[("filesDir/playlist.m3u")]
-        PREFS[("SharedPreferences<br/>playlist URL, last channel, favorites")]
+        CACHE[("filesDir/playlists/&lt;sha256(url)&gt;.m3u")]
+        PREFS[("SharedPreferences<br/>saved playlists, current URL,<br/>last channel, favorites")]
     end
 
     VM["MainViewModel<br/>StateFlow&lt;PlaylistState&gt;"]
 
     subgraph UI["MainActivity · OnAirTvApp (local Compose navigation)"]
         SETUP["SetupScreen /<br/>LoadingScreen / ErrorScreen"]
+        PLS["PlaylistsScreen<br/>switch / add / remove"]
         CH["ChannelsScreen<br/>groups + channels"]
         PLAYER["PlayerScreen<br/>ExoPlayer, zapping, banner"]
     end
@@ -76,20 +81,22 @@ flowchart TB
     PARSER -- "channels" --> REPO
     REPO -- "cached, then fresh list" --> VM
     VM -- "state" --> UI
-    SETUP -- "loadPlaylist(url)" --> VM
+    SETUP -- "addPlaylist(url)" --> VM
+    PLS -- "selectPlaylist() / removePlaylist()" --> VM
     CH -- "visible list + position" --> PLAYER
     PLAYER -- "rememberChannel()" --> VM
     ST -- "Media3 DefaultHttpDataSource<br/>per-channel headers" --> PLAYER
 ```
 
 `OnAirTvApp` chooses the screen from `PlaylistState` and a few pieces of local state
-(`showSetup`, `selectedGroup`, `playback`):
+(`showSetup`, `showPlaylists`, `selectedGroup`, `playback`):
 
 ```mermaid
 stateDiagram-v2
     [*] --> NotConfigured: no saved URL
     [*] --> Loading: saved URL
-    NotConfigured --> Loading: loadPlaylist(url)
+    NotConfigured --> Loading: addPlaylist(url)
+    Ready --> Loading: switch playlist
     Loading --> Ready: parsed channels
     Loading --> Failed: network / parse error
     Failed --> Loading: retry()
@@ -138,10 +145,9 @@ stateDiagram-v2
 
 ## Next steps
 
-1. Multiple saved playlists.
-2. XMLTV EPG import → "now / next" on each channel.
-3. Full EPG grid.
-4. Settings: buffer size, decoder preference, stream timeouts.
+1. XMLTV EPG import → "now / next" on each channel.
+2. Full EPG grid.
+3. Settings: buffer size, decoder preference, stream timeouts.
 
 ## License
 

@@ -51,18 +51,17 @@ private val PRESETS = listOf(
 
 @Composable
 fun SetupScreen(
-    initialUrl: String,
-    onSubmit: (String) -> Unit,
+    onSubmit: (url: String, name: String?) -> Unit,
     onCancel: (() -> Unit)?,
 ) {
-    var url by rememberSaveable { mutableStateOf(initialUrl) }
+    var url by rememberSaveable { mutableStateOf("") }
     var fieldFocused by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
 
     if (onCancel != null) BackHandler(onBack = onCancel)
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
-    val submit = { if (url.isNotBlank()) onSubmit(url) }
+    val submit = { if (url.isNotBlank()) onSubmit(url, null) }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
@@ -124,7 +123,7 @@ fun SetupScreen(
             Text("Quick picks", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PRESETS.forEach { (label, presetUrl) ->
-                    OutlinedButton(onClick = { url = presetUrl; onSubmit(presetUrl) }) {
+                    OutlinedButton(onClick = { url = presetUrl; onSubmit(presetUrl, label) }) {
                         Text(label)
                     }
                 }
@@ -159,7 +158,7 @@ fun ErrorScreen(
             Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onRetry, modifier = Modifier.focusRequester(focus)) { Text("Retry") }
-                OutlinedButton(onClick = onChangePlaylist) { Text("Change playlist") }
+                OutlinedButton(onClick = onChangePlaylist) { Text("Playlists") }
             }
         }
     }
