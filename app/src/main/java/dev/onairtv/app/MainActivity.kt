@@ -1,4 +1,4 @@
-package dev.opentv.app
+package dev.onairtv.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -18,12 +18,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.darkColorScheme
-import dev.opentv.app.data.Channel
-import dev.opentv.app.ui.ChannelsScreen
-import dev.opentv.app.ui.ErrorScreen
-import dev.opentv.app.ui.LoadingScreen
-import dev.opentv.app.ui.PlayerScreen
-import dev.opentv.app.ui.SetupScreen
+import dev.onairtv.app.data.Channel
+import dev.onairtv.app.ui.ChannelsScreen
+import dev.onairtv.app.ui.ErrorScreen
+import dev.onairtv.app.ui.LoadingScreen
+import dev.onairtv.app.ui.PlayerScreen
+import dev.onairtv.app.ui.SetupScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize(), shape = RectangleShape) {
-                    OpenTvApp()
+                    OnAirTvApp()
                 }
             }
         }
@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
 private data class Playback(val channels: List<Channel>, val position: Int)
 
 @Composable
-private fun OpenTvApp(vm: MainViewModel = viewModel()) {
+private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     var showSetup by rememberSaveable { mutableStateOf(false) }

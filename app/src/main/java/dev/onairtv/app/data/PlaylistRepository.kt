@@ -1,4 +1,4 @@
-package dev.opentv.app.data
+package dev.onairtv.app.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -9,12 +9,12 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-const val DEFAULT_USER_AGENT = "OpenTV/0.1 (Android TV)"
+const val DEFAULT_USER_AGENT = "OnAirTV/0.1 (Android TV)"
 
 /** Downloads the playlist, keeps a cached copy on disk, and stores simple settings. */
 class PlaylistRepository(context: Context) {
 
-    private val prefs = context.getSharedPreferences("opentv", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("onairtv", Context.MODE_PRIVATE)
     private val cacheFile = File(context.filesDir, "playlist.m3u")
 
     private val client = OkHttpClient.Builder()

@@ -1,4 +1,4 @@
-package dev.opentv.app.ui
+package dev.onairtv.app.ui
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -58,9 +58,9 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import dev.opentv.app.R
-import dev.opentv.app.data.Channel
-import dev.opentv.app.data.DEFAULT_USER_AGENT
+import dev.onairtv.app.R
+import dev.onairtv.app.data.Channel
+import dev.onairtv.app.data.DEFAULT_USER_AGENT
 import kotlinx.coroutines.delay
 
 private enum class Status { Loading, Playing, Failed }

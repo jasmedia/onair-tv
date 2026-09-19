@@ -1,4 +1,4 @@
-package dev.opentv.app.ui
+package dev.onairtv.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,9 +34,9 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import dev.opentv.app.ALL_CHANNELS
-import dev.opentv.app.PlaylistState
-import dev.opentv.app.data.Channel
+import dev.onairtv.app.ALL_CHANNELS
+import dev.onairtv.app.PlaylistState
+import dev.onairtv.app.data.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -79,7 +79,7 @@ fun ChannelsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("OpenTV", style = MaterialTheme.typography.headlineSmall)
+                Text("OnAir TV", style = MaterialTheme.typography.headlineSmall)
                 Text(
                     "$group · ${visible.size} channels",
                     style = MaterialTheme.typography.bodyMedium,

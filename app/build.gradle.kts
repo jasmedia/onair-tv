@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.opentv.app"
+    namespace = "dev.onairtv.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.opentv.app"
+        applicationId = "dev.onairtv.app"
         minSdk = 23
         targetSdk = 35
         versionCode = 1

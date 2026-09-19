@@ -1,4 +1,4 @@
-package dev.opentv.app.data
+package dev.onairtv.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

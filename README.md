@@ -1,4 +1,4 @@
-# OpenTV: a minimal IPTV player for Google TV / Android TV
+# OnAir TV: a minimal IPTV player for Google TV / Android TV
 
 An MVP IPTV player in the spirit of TiviMate. It loads any M3U playlist (including the
 [iptv-org](https://github.com/iptv-org/iptv) lists), shows channels by group and plays them
@@ -22,7 +22,7 @@ full-screen with remote-control zapping.
 ## Project layout
 
 ```
-app/src/main/java/dev/opentv/app/
+app/src/main/java/dev/onairtv/app/
 ├── MainActivity.kt          # entry point + simple screen navigation
 ├── MainViewModel.kt         # playlist state (NotConfigured / Loading / Failed / Ready)
 ├── data/
@@ -55,7 +55,7 @@ flowchart TB
 
     VM["MainViewModel<br/>StateFlow&lt;PlaylistState&gt;"]
 
-    subgraph UI["MainActivity · OpenTvApp (local Compose navigation)"]
+    subgraph UI["MainActivity · OnAirTvApp (local Compose navigation)"]
         SETUP["SetupScreen /<br/>LoadingScreen / ErrorScreen"]
         CH["ChannelsScreen<br/>groups + channels"]
         PLAYER["PlayerScreen<br/>ExoPlayer, zapping, banner"]
@@ -74,7 +74,7 @@ flowchart TB
     ST -- "Media3 DefaultHttpDataSource<br/>per-channel headers" --> PLAYER
 ```
 
-`OpenTvApp` chooses the screen from `PlaylistState` and a few pieces of local state
+`OnAirTvApp` chooses the screen from `PlaylistState` and a few pieces of local state
 (`showSetup`, `selectedGroup`, `playback`):
 
 ```mermaid
@@ -104,7 +104,7 @@ stateDiagram-v2
    then let Gradle sync. It downloads the Android SDK pieces and dependencies it needs.
 2. **Emulator:** open Device Manager, choose Create device, pick the **TV** category (Google TV 1080p),
    and select an API 34 or 35 image. Your PC keyboard's arrow keys, Enter and Esc act as the remote.
-3. Press **Run ▶**. The app appears on the TV home screen as "OpenTV".
+3. Press **Run ▶**. The app appears on the TV home screen as "OnAir TV".
 
 ## Install on a real Google TV (sideload)
 

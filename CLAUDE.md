@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-OpenTV: a minimal IPTV player for Google TV / Android TV, in the spirit of TiviMate. Loads an M3U
+OnAir TV: a minimal IPTV player for Google TV / Android TV, in the spirit of TiviMate. Loads an M3U
 playlist (e.g. iptv-org lists), browses channels by group, and plays full-screen with remote-control
 zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Media3 ExoPlayer
 (HLS/DASH/TS), OkHttp, Coil.
@@ -15,8 +15,8 @@ zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Medi
 ./gradlew assembleDebug           # build debug APK
 ./gradlew installDebug            # build + install on a connected/adb-connected device
 ./gradlew test                    # run all unit tests (app/src/test)
-./gradlew test --tests "dev.opentv.app.data.M3uParserTest"          # run one test class
-./gradlew test --tests "dev.opentv.app.data.M3uParserTest.parsesAllChannels"  # run one test method
+./gradlew test --tests "dev.onairtv.app.data.M3uParserTest"          # run one test class
+./gradlew test --tests "dev.onairtv.app.data.M3uParserTest.parsesAllChannels"  # run one test method
 ```
 
 There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`, currently
@@ -37,17 +37,17 @@ export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 
 # 1. Start the Google TV AVD (API 36) in the background, wait for full boot
-nohup emulator -avd Television_4K > /tmp/opentv-emulator.log 2>&1 &
+nohup emulator -avd Television_4K > /tmp/onairtv-emulator.log 2>&1 &
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 5; done
 
 # 2. Build, install, launch (TV apps use the LEANBACK_LAUNCHER category)
 ./gradlew installDebug
-adb shell monkey -p dev.opentv.app -c android.intent.category.LEANBACK_LAUNCHER 1
+adb shell monkey -p dev.onairtv.app -c android.intent.category.LEANBACK_LAUNCHER 1
 
 # 3. Verify: screenshot + crash log
 adb shell input keyevent KEYCODE_WAKEUP   # display sleeps → screencap is all black otherwise
-adb exec-out screencap -p > /tmp/opentv.png
+adb exec-out screencap -p > /tmp/onairtv.png
 adb logcat -d -b crash | tail
 ```
 
@@ -71,7 +71,7 @@ forces a cold boot (or a wipe via Device Manager → Wipe Data).
 
 Single-module app (`:app`), no DI framework — one `PlaylistRepository` is instantiated directly by
 `MainViewModel`. Data flows one way: `PlaylistRepository` → `MainViewModel` (`StateFlow<PlaylistState>`)
-→ `MainActivity`'s `OpenTvApp` composable, which switches screens based on state.
+→ `MainActivity`'s `OnAirTvApp` composable, which switches screens based on state.
 
 - **`PlaylistState`** (sealed interface in `MainViewModel.kt`): `NotConfigured` → `Loading` →
   `Ready(channels, groups)` | `Failed(message)`. `MainViewModel` shows the on-disk cached playlist
@@ -85,7 +85,7 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
 - **`PlaylistRepository`** (`data/PlaylistRepository.kt`) owns both the disk cache
   (`filesDir/playlist.m3u`) and `SharedPreferences` (playlist URL, last-watched channel URL). It's the
   only place that talks to `OkHttpClient` or touches `Context`.
-- **Navigation is local `Composable` state, not a nav library.** `OpenTvApp` in `MainActivity.kt` holds
+- **Navigation is local `Composable` state, not a nav library.** `OnAirTvApp` in `MainActivity.kt` holds
   `showSetup`, `selectedGroup`, and `playback: Playback?` (`Playback` = the current channel list +
   position) as plain `remember`/`rememberSaveable` state, and decides which screen to show with a
   `when`. Going from the channel list into the player passes the *whole visible channel list* plus a

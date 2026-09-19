@@ -1,4 +1,4 @@
-package dev.opentv.app.data
+package dev.onairtv.app.data
 
 /** One playable channel from an M3U playlist. */
 data class Channel(

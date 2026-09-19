@@ -1,4 +1,4 @@
-package dev.opentv.app.ui
+package dev.onairtv.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
