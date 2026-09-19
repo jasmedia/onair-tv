@@ -149,7 +149,7 @@ fun ChannelsScreen(
                         )
                     }
                 }
-                OutlinedButton(onClick = onChangePlaylist) { Text("Change playlist") }
+                OutlinedButton(onClick = onChangePlaylist) { Text("Playlists") }
             }
         }
 

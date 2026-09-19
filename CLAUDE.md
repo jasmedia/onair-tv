@@ -20,7 +20,7 @@ zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Medi
 ```
 
 There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`, currently
-covering `M3uParser` and `ChannelSearch`. There is no linter configured (no ktlint/detekt).
+covering `M3uParser`, `ChannelSearch`, and `SavedPlaylists`. There is no linter configured (no ktlint/detekt).
 
 To sideload onto a real Google TV: `adb connect <tv-ip>:5555` then `./gradlew installDebug` (see
 README for the developer-options / pairing steps).
@@ -82,9 +82,17 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   with no Android dependencies, which is why it's the one thing under test. It resolves per-channel
   `User-Agent`/`Referer` from three possible sources, in priority order: `#EXTVLCOPT` lines, `#EXTINF`
   attributes, then Kodi-style `url|User-Agent=...&Referer=...` suffixes on the stream URL itself.
-- **`PlaylistRepository`** (`data/PlaylistRepository.kt`) owns both the disk cache
-  (`filesDir/playlist.m3u`) and `SharedPreferences` (playlist URL, last-watched channel URL, favorite
-  channel URLs). It's the only place that talks to `OkHttpClient` or touches `Context`.
+- **`PlaylistRepository`** (`data/PlaylistRepository.kt`) owns both the disk cache (one file per
+  playlist, `filesDir/playlists/<sha256(url)>.m3u`) and `SharedPreferences` (saved playlists, current
+  playlist URL, last-watched channel URL, favorite channel URLs). It's the only place that talks to
+  `OkHttpClient` or touches `Context`. On first run after upgrading it migrates the old single
+  `playlist_url` + `filesDir/playlist.m3u` into the saved list.
+- **Multiple playlists.** Saved playlists are an ordered `List<SavedPlaylist>` (name + URL, keyed by
+  URL), stored as `name<TAB>url` lines by `SavedPlaylists` (a pure object, under test).
+  `MainViewModel.open(url)` is the single load path (startup, add, switch, retry): it cancels any
+  in-flight load, shows the cached copy, then refreshes. Favorites and last-watched are global, not
+  per playlist (they're stream URLs). `PlaylistsScreen` switches/adds/removes; each row is a
+  `ListItem` plus a `Remove` button reached with ▶.
 - **Favorites and search.** Favorites are a `Set` of stream URLs (like last-watched, keyed by URL so
   they survive playlist refreshes), exposed as `MainViewModel.favorites` and toggled by holding OK
   (`ListItem.onLongClick` in the list, key `repeatCount == 1` in the player). `FAVORITES` is a virtual
@@ -92,7 +100,7 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   into the player). A non-blank query overrides the selected group and searches the whole playlist via
   `ChannelSearch` (a pure function, under test).
 - **Navigation is local `Composable` state, not a nav library.** `OnAirTvApp` in `MainActivity.kt` holds
-  `showSetup`, `selectedGroup`, `searchQuery`, and `playback: Playback?` (`Playback` = the current channel list +
+  `showSetup`, `showPlaylists`, `selectedGroup`, `searchQuery`, and `playback: Playback?` (`Playback` = the current channel list +
   position) as plain `remember`/`rememberSaveable` state, and decides which screen to show with a
   `when`. Going from the channel list into the player passes the *whole visible channel list* plus a
   position, so zapping (▲/▼) moves through that same filtered/group list without re-querying state.
