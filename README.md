@@ -17,7 +17,9 @@ full-screen with remote-control zapping.
   must match, in any order. Back clears the search.
 - Full-screen playback:
   - ▲/▼ or CH+/CH− switch channels. Quick presses are debounced.
-  - OK shows the channel info banner. Hold OK to add or remove the channel from favorites.
+  - OK opens a mini channel list over the video, focused on the current channel. Pick one with
+    OK; Back or ◀ closes it. Info shows the channel banner.
+  - Hold OK to add or remove the channel from favorites (in the mini list too).
   - Zapping stays inside the list you started from (a group, Favorites, or search results).
   - Back returns to the list, focused on the channel you were watching.
 - Per-channel `User-Agent` / `Referer`, from `#EXTVLCOPT` lines, attributes, or Kodi-style `url|User-Agent=…`.
@@ -96,6 +98,7 @@ stateDiagram-v2
         [*] --> Channels
         Channels --> Player: OK on a channel
         Player --> Player: ▲/▼ zap (300 ms debounce)
+        Player --> Player: OK mini list → pick channel
         Player --> Channels: Back (refocus last channel)
     }
     note right of Ready
@@ -138,8 +141,7 @@ stateDiagram-v2
 1. Multiple saved playlists.
 2. XMLTV EPG import → "now / next" on each channel.
 3. Full EPG grid.
-4. In-player channel list overlay (OK → mini list, like TiviMate).
-5. Settings: buffer size, decoder preference, stream timeouts.
+4. Settings: buffer size, decoder preference, stream timeouts.
 
 ## License
 

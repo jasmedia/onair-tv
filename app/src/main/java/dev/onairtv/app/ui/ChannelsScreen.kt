@@ -213,7 +213,7 @@ fun ChannelsScreen(
 }
 
 @Composable
-private fun ChannelRow(
+internal fun ChannelRow(
     channel: Channel,
     number: Int,
     isFavorite: Boolean,

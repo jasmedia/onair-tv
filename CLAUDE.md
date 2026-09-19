@@ -102,6 +102,12 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   media source, so holding ▲/▼ doesn't load every channel in between. `onChannelStarted` is how the
   last-watched channel gets persisted back through `MainViewModel.rememberChannel` into
   `PlaylistRepository`.
+- **In-player channel list.** A short OK press in `PlayerScreen` opens `ChannelListOverlay` (the same
+  `channels` list the player zaps through, reusing `ChannelRow` from `ChannelsScreen.kt`). OK opens it
+  on key-*up* so holding OK (favorite toggle on the first key repeat) never opens it. While it's open
+  the player's `onKeyEvent` returns `false` so the rows get the D-pad. Back is handled in the overlay's
+  `onPreviewKeyEvent`, not a `BackHandler`: with a row focused, Compose consumes Back to move focus
+  out of it, so the back dispatcher never fires.
 - Focus handling for D-pad navigation is manual in a few places (`FocusRequester` +
   `LaunchedEffect { requestFocus() }` wrapped in `runCatching`), notably to restore focus to the
   last-watched channel row when returning to `ChannelsScreen` from the player.

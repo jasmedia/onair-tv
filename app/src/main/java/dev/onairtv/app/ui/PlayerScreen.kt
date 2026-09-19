@@ -7,16 +7,24 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -37,6 +45,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -89,6 +98,9 @@ fun PlayerScreen(
     var triedAsHls by remember { mutableStateOf(false) }
     var overlayNonce by remember { mutableIntStateOf(0) }
     var showOverlay by remember { mutableStateOf(true) }
+    var showList by remember { mutableStateOf(false) }
+    // Set on an OK key-down that started here, so its key-up opens the list (unless it became a hold).
+    var okPending by remember { mutableStateOf(false) }
 
     val currentChannel by rememberUpdatedState(channel)
     val onStarted by rememberUpdatedState(onChannelStarted)
@@ -154,7 +166,10 @@ fun PlayerScreen(
     BackHandler(onBack = onExit)
 
     val keyFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { keyFocus.requestFocus() } }
+    // The list takes focus while open; give it back to the player when the list closes.
+    LaunchedEffect(showList) {
+        if (!showList) runCatching { keyFocus.requestFocus() }
+    }
 
     fun zap(delta: Int) {
         if (channels.isEmpty()) return
@@ -169,15 +184,26 @@ fun PlayerScreen(
             .focusRequester(keyFocus)
             .focusable()
             .onKeyEvent { event ->
+                // While the list is open its rows own the D-pad (these events bubble up from them).
+                if (showList) return@onKeyEvent false
+                val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter ||
+                    event.key == Key.NumPadEnter
+                // Press OK for the channel list; hold it (first key repeat) to toggle the favorite.
+                // The list opens on key-up, so a hold never opens it.
+                if (isOk && event.type == KeyEventType.KeyUp) {
+                    if (okPending && channels.isNotEmpty()) showList = true
+                    okPending = false
+                    return@onKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 val repeat = event.nativeKeyEvent.repeatCount
                 when (event.key) {
                     Key.DirectionUp, Key.ChannelDown -> { zap(-1); true }
                     Key.DirectionDown, Key.ChannelUp -> { zap(+1); true }
-                    // Press OK for the banner; hold it (first key repeat) to toggle the favorite.
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        if (repeat == 0) overlayNonce++
+                        if (repeat == 0) okPending = true
                         if (repeat == 1) {
+                            okPending = false
                             onToggleFavorite(channel)
                             overlayNonce++
                         }
@@ -206,7 +232,7 @@ fun PlayerScreen(
         )
 
         AnimatedVisibility(
-            visible = showOverlay || status == Status.Failed,
+            visible = (showOverlay || status == Status.Failed) && !showList,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -219,6 +245,103 @@ fun PlayerScreen(
                 status = status,
                 errorText = errorText,
             )
+        }
+
+        AnimatedVisibility(
+            visible = showList,
+            enter = fadeIn() + slideInHorizontally { -it / 4 },
+            exit = fadeOut() + slideOutHorizontally { -it / 4 },
+            modifier = Modifier.align(Alignment.CenterStart),
+        ) {
+            ChannelListOverlay(
+                channels = channels,
+                position = position,
+                favorites = favorites,
+                onSelect = { index ->
+                    showList = false
+                    if (index != position) onPositionChange(index)
+                },
+                onToggleFavorite = onToggleFavorite,
+                onDismiss = { showList = false },
+            )
+        }
+    }
+}
+
+/**
+ * The mini channel list shown over the video (OK in the player), like TiviMate's. It lists the
+ * same channels the player zaps through, opens focused on the one playing, and closes on OK
+ * (switching channel), Back, ◀, or after 10 s without a key press.
+ */
+@Composable
+private fun ChannelListOverlay(
+    channels: List<Channel>,
+    position: Int,
+    favorites: Set<String>,
+    onSelect: (Int) -> Unit,
+    onToggleFavorite: (Channel) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (position - 3).coerceAtLeast(0),
+    )
+    val currentFocus = remember { FocusRequester() }
+    var keyNonce by remember { mutableIntStateOf(0) }
+    val dismiss by rememberUpdatedState(onDismiss)
+
+    LaunchedEffect(Unit) {
+        delay(50) // let the row compose before focusing it
+        runCatching { currentFocus.requestFocus() }
+    }
+    LaunchedEffect(keyNonce) {
+        delay(10_000)
+        dismiss()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(480.dp)
+            .padding(24.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.85f))
+            .padding(12.dp)
+            .onPreviewKeyEvent { event ->
+                keyNonce++
+                when (event.key) {
+                    // Handled here, not with a BackHandler: Compose spends Back on moving focus out of
+                    // the focused row, so the back dispatcher would never see it.
+                    Key.Back, Key.DirectionLeft -> {
+                        if (event.type == KeyEventType.KeyUp) dismiss()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        Text(
+            "Channels · ${channels.size}",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 8.dp),
+        )
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            itemsIndexed(channels, key = { _, ch -> ch.index }) { index, ch ->
+                ChannelRow(
+                    channel = ch,
+                    number = index + 1,
+                    isFavorite = ch.url in favorites,
+                    onClick = { onSelect(index) },
+                    onLongClick = { onToggleFavorite(ch) },
+                    modifier = if (index == position) {
+                        Modifier.focusRequester(currentFocus)
+                    } else Modifier,
+                )
+            }
         }
     }
 }
@@ -269,7 +392,7 @@ private fun ChannelBanner(
             )
         }
         Text(
-            "$number / $total   ▲▼ switch · OK info · Hold OK ★ · Back list",
+            "$number / $total   ▲▼ switch · OK list · Hold OK ★ · Back exit",
             style = MaterialTheme.typography.labelMedium,
             color = Color(0xFF8A93A6),
         )
