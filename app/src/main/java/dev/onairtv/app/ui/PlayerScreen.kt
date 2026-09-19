@@ -72,6 +72,8 @@ fun PlayerScreen(
     position: Int,
     onPositionChange: (Int) -> Unit,
     onChannelStarted: (Channel) -> Unit,
+    favorites: Set<String>,
+    onToggleFavorite: (Channel) -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -168,10 +170,20 @@ fun PlayerScreen(
             .focusable()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val repeat = event.nativeKeyEvent.repeatCount
                 when (event.key) {
                     Key.DirectionUp, Key.ChannelDown -> { zap(-1); true }
                     Key.DirectionDown, Key.ChannelUp -> { zap(+1); true }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Info -> {
+                    // Press OK for the banner; hold it (first key repeat) to toggle the favorite.
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        if (repeat == 0) overlayNonce++
+                        if (repeat == 1) {
+                            onToggleFavorite(channel)
+                            overlayNonce++
+                        }
+                        true
+                    }
+                    Key.Info -> {
                         overlayNonce++
                         true
                     }
@@ -203,6 +215,7 @@ fun PlayerScreen(
                 channel = channel,
                 number = position + 1,
                 total = channels.size,
+                isFavorite = channel.url in favorites,
                 status = status,
                 errorText = errorText,
             )
@@ -215,6 +228,7 @@ private fun ChannelBanner(
     channel: Channel,
     number: Int,
     total: Int,
+    isFavorite: Boolean,
     status: Status,
     errorText: String?,
 ) {
@@ -238,7 +252,7 @@ private fun ChannelBanner(
         }
         Column(Modifier.weight(1f)) {
             Text(
-                "$number  ${channel.name}",
+                "$number  ${channel.name}" + if (isFavorite) "  ★" else "",
                 style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 maxLines = 1,
@@ -255,7 +269,7 @@ private fun ChannelBanner(
             )
         }
         Text(
-            "$number / $total   ▲▼ switch · OK info · Back list",
+            "$number / $total   ▲▼ switch · OK info · Hold OK ★ · Back list",
             style = MaterialTheme.typography.labelMedium,
             color = Color(0xFF8A93A6),
         )

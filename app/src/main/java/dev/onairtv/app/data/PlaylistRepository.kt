@@ -33,6 +33,12 @@ class PlaylistRepository(context: Context) {
         get() = prefs.getString(KEY_LAST_CHANNEL, null)
         set(value) = prefs.edit().putString(KEY_LAST_CHANNEL, value).apply()
 
+    /** Stream URLs of favorite channels. Keyed by URL so favorites survive playlist refreshes. */
+    var favoriteUrls: Set<String>
+        // Copy: the set returned by getStringSet must not be modified or kept.
+        get() = prefs.getStringSet(KEY_FAVORITES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_FAVORITES, value).apply()
+
     suspend fun loadCached(): List<Channel>? = withContext(Dispatchers.IO) {
         if (cacheFile.exists()) M3uParser.parse(cacheFile.readText()) else null
     }
@@ -58,5 +64,6 @@ class PlaylistRepository(context: Context) {
     private companion object {
         const val KEY_URL = "playlist_url"
         const val KEY_LAST_CHANNEL = "last_channel_url"
+        const val KEY_FAVORITES = "favorite_urls"
     }
 }

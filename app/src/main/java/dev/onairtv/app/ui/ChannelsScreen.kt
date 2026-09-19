@@ -1,6 +1,8 @@
 package dev.onairtv.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,21 +14,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ListItem
@@ -35,8 +47,10 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import dev.onairtv.app.ALL_CHANNELS
+import dev.onairtv.app.FAVORITES
 import dev.onairtv.app.PlaylistState
 import dev.onairtv.app.data.Channel
+import dev.onairtv.app.data.ChannelSearch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -45,6 +59,10 @@ fun ChannelsScreen(
     state: PlaylistState.Ready,
     selectedGroup: String,
     onGroupSelected: (String) -> Unit,
+    favorites: Set<String>,
+    onToggleFavorite: (Channel) -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
     listState: LazyListState,
     focusUrl: String?,
     onPlay: (channels: List<Channel>, position: Int) -> Unit,
@@ -52,10 +70,34 @@ fun ChannelsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val group = if (selectedGroup in state.groups) selectedGroup else ALL_CHANNELS
+    // A search covers the whole playlist, whichever group is selected.
+    val searching = query.isNotBlank()
 
-    val visible = remember(state, group) {
-        if (group == ALL_CHANNELS) state.channels
-        else state.channels.filter { group in it.groups }
+    val visible = remember(state, group, favorites, query) {
+        when {
+            searching -> ChannelSearch.filter(state.channels, query)
+            group == ALL_CHANNELS -> state.channels
+            group == FAVORITES -> state.channels.filter { it.url in favorites }
+            else -> state.channels.filter { group in it.groups }
+        }
+    }
+
+    var editingQuery by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    // Bumped to move focus back into the channel list (e.g. after closing the search field).
+    var listFocusRequest by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(editingQuery) {
+        if (editingQuery) runCatching { searchFocus.requestFocus() }
+    }
+    // Back closes the search field first, then clears the search.
+    BackHandler(enabled = editingQuery) {
+        editingQuery = false
+        listFocusRequest++
+    }
+    BackHandler(enabled = !editingQuery && searching) {
+        onQueryChange("")
+        listFocusRequest++
     }
 
     // Which row should get focus when this screen appears: the last watched channel, else the first.
@@ -64,7 +106,7 @@ fun ChannelsScreen(
     }
     val initialFocus = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(listFocusRequest) {
         if (visible.isEmpty()) return@LaunchedEffect
         val info = listState.layoutInfo
         val onScreen = info.visibleItemsInfo.any { it.index == initialFocusIndex }
@@ -81,12 +123,34 @@ fun ChannelsScreen(
             Column(Modifier.weight(1f)) {
                 Text("OnAir TV", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "$group · ${visible.size} channels",
+                    "${if (searching) "Search \"${query.trim()}\"" else group} · ${visible.size} channels",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(onClick = onChangePlaylist) { Text("Change playlist") }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (editingQuery) {
+                    SearchField(
+                        query = query,
+                        onQueryChange = onQueryChange,
+                        onDone = {
+                            editingQuery = false
+                            listFocusRequest++
+                        },
+                        modifier = Modifier.focusRequester(searchFocus),
+                    )
+                } else {
+                    OutlinedButton(onClick = { editingQuery = true }) {
+                        Text(
+                            if (searching) "Search: ${query.trim()}" else "Search",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 280.dp),
+                        )
+                    }
+                }
+                OutlinedButton(onClick = onChangePlaylist) { Text("Change playlist") }
+            }
         }
 
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -98,9 +162,10 @@ fun ChannelsScreen(
             ) {
                 items(state.groups, key = { it }) { g ->
                     ListItem(
-                        selected = g == group,
+                        selected = !searching && g == group,
                         onClick = {
-                            if (g != group) {
+                            if (searching || g != group) {
+                                onQueryChange("")
                                 onGroupSelected(g)
                                 scope.launch { listState.scrollToItem(0) }
                             }
@@ -114,7 +179,13 @@ fun ChannelsScreen(
 
             if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No channels in this group")
+                    Text(
+                        when {
+                            searching -> "No channels match \"${query.trim()}\""
+                            group == FAVORITES -> "No favorites yet. Hold OK on a channel to add it."
+                            else -> "No channels in this group"
+                        },
+                    )
                 }
             } else {
                 LazyColumn(
@@ -127,7 +198,9 @@ fun ChannelsScreen(
                         ChannelRow(
                             channel = channel,
                             number = position + 1,
+                            isFavorite = channel.url in favorites,
                             onClick = { onPlay(visible, position) },
+                            onLongClick = { onToggleFavorite(channel) },
                             modifier = if (position == initialFocusIndex) {
                                 Modifier.focusRequester(initialFocus)
                             } else Modifier,
@@ -143,12 +216,15 @@ fun ChannelsScreen(
 private fun ChannelRow(
     channel: Channel,
     number: Int,
+    isFavorite: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ListItem(
         selected = false,
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier,
         leadingContent = {
             Box(
@@ -182,6 +258,41 @@ private fun ChannelRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        },
+        trailingContent = if (isFavorite) {
+            { Text("★", style = MaterialTheme.typography.titleMedium) }
+        } else null,
+    )
+}
+
+/** The search box. Typing filters the list live; Done (or Back) returns focus to the list. */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onDone() }, onDone = { onDone() }),
+        modifier = modifier
+            .width(320.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+            .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        decorationBox = { inner ->
+            if (query.isEmpty()) {
+                Text("Channel name", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            inner()
         },
     )
 }
