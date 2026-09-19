@@ -11,9 +11,14 @@ full-screen with remote-control zapping.
 - Add a playlist by URL, or pick one of the iptv-org presets (India, Malayalam, News, All).
 - The playlist is cached on disk, so the app opens instantly and refreshes in the background.
 - Channel browser: a group list on the left and channels with logos on the right.
+- Favorites: hold OK on a channel (in the list or while watching) to star it. Starred channels
+  appear in the **★ Favorites** group.
+- Search: find channels by name across the whole playlist, ignoring case and accents. Each word
+  must match, in any order. Back clears the search.
 - Full-screen playback:
   - ▲/▼ or CH+/CH− switch channels. Quick presses are debounced.
-  - OK shows the channel info banner.
+  - OK shows the channel info banner. Hold OK to add or remove the channel from favorites.
+  - Zapping stays inside the list you started from (a group, Favorites, or search results).
   - Back returns to the list, focused on the channel you were watching.
 - Per-channel `User-Agent` / `Referer`, from `#EXTVLCOPT` lines, attributes, or Kodi-style `url|User-Agent=…`.
 - URLs with no file extension are retried as HLS if the first attempt fails.
@@ -27,7 +32,8 @@ app/src/main/java/dev/onairtv/app/
 ├── MainViewModel.kt         # playlist state (NotConfigured / Loading / Failed / Ready)
 ├── data/
 │   ├── M3uParser.kt         # extended-M3U parser → List<Channel>
-│   └── PlaylistRepository.kt# download, disk cache, preferences
+│   ├── ChannelSearch.kt     # channel-name search (case/accent-insensitive)
+│   └── PlaylistRepository.kt# download, disk cache, preferences, favorites
 └── ui/
     ├── SetupScreens.kt      # add-playlist, loading, error screens
     ├── ChannelsScreen.kt    # groups + channel list (D-pad focus handling)
@@ -50,7 +56,7 @@ flowchart TB
         REPO["PlaylistRepository<br/>OkHttp download"]
         PARSER["M3uParser<br/>text → List&lt;Channel&gt;<br/>+ User-Agent / Referer"]
         CACHE[("filesDir/playlist.m3u")]
-        PREFS[("SharedPreferences<br/>playlist URL, last channel")]
+        PREFS[("SharedPreferences<br/>playlist URL, last channel, favorites")]
     end
 
     VM["MainViewModel<br/>StateFlow&lt;PlaylistState&gt;"]
@@ -129,12 +135,11 @@ stateDiagram-v2
 
 ## Next steps
 
-1. Favorites and search.
-2. Multiple saved playlists.
-3. XMLTV EPG import → "now / next" on each channel.
-4. Full EPG grid.
-5. In-player channel list overlay (OK → mini list, like TiviMate).
-6. Settings: buffer size, decoder preference, stream timeouts.
+1. Multiple saved playlists.
+2. XMLTV EPG import → "now / next" on each channel.
+3. Full EPG grid.
+4. In-player channel list overlay (OK → mini list, like TiviMate).
+5. Settings: buffer size, decoder preference, stream timeouts.
 
 ## License
 

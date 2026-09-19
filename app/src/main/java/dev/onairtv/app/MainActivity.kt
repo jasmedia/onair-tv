@@ -44,9 +44,11 @@ private data class Playback(val channels: List<Channel>, val position: Int)
 @Composable
 private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val favorites by vm.favorites.collectAsStateWithLifecycle()
 
     var showSetup by rememberSaveable { mutableStateOf(false) }
     var selectedGroup by rememberSaveable { mutableStateOf(ALL_CHANNELS) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var playback by remember { mutableStateOf<Playback?>(null) }
     var focusUrl by remember { mutableStateOf(vm.lastChannelUrl) }
     val channelListState = rememberLazyListState()
@@ -54,7 +56,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     when (val s = state) {
         PlaylistState.NotConfigured -> SetupScreen(
             initialUrl = vm.playlistUrl.orEmpty(),
-            onSubmit = { url -> vm.loadPlaylist(url); selectedGroup = ALL_CHANNELS },
+            onSubmit = { url -> vm.loadPlaylist(url); selectedGroup = ALL_CHANNELS; searchQuery = "" },
             onCancel = null,
         )
 
@@ -64,6 +66,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                 onSubmit = { url ->
                     vm.loadPlaylist(url)
                     selectedGroup = ALL_CHANNELS
+                    searchQuery = ""
                     showSetup = false
                 },
                 onCancel = { showSetup = false },
@@ -84,6 +87,10 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         state = s,
                         selectedGroup = selectedGroup,
                         onGroupSelected = { selectedGroup = it },
+                        favorites = favorites,
+                        onToggleFavorite = vm::toggleFavorite,
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
                         listState = channelListState,
                         focusUrl = focusUrl,
                         onPlay = { list, position ->
@@ -100,6 +107,8 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                             vm.rememberChannel(channel)
                             focusUrl = channel.url
                         },
+                        favorites = favorites,
+                        onToggleFavorite = vm::toggleFavorite,
                         onExit = { playback = null },
                     )
                 }

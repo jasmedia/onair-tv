@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 const val ALL_CHANNELS = "All channels"
+const val FAVORITES = "★ Favorites"
 
 sealed interface PlaylistState {
     /** No playlist configured yet: show the setup screen. */
@@ -26,6 +27,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow<PlaylistState>(PlaylistState.Loading)
     val state: StateFlow<PlaylistState> = _state.asStateFlow()
+
+    private val _favorites = MutableStateFlow(repo.favoriteUrls)
+    /** Stream URLs of favorite channels. */
+    val favorites: StateFlow<Set<String>> = _favorites.asStateFlow()
 
     val playlistUrl: String? get() = repo.playlistUrl
     val lastChannelUrl: String? get() = repo.lastChannelUrl
@@ -71,9 +76,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         repo.lastChannelUrl = channel.url
     }
 
+    fun toggleFavorite(channel: Channel) {
+        val current = _favorites.value
+        val updated = if (channel.url in current) current - channel.url else current + channel.url
+        repo.favoriteUrls = updated
+        _favorites.value = updated
+    }
+
     private fun ready(channels: List<Channel>): PlaylistState.Ready {
         val groups = channels.asSequence().flatMap { it.groups }.distinct().sorted().toList()
-        return PlaylistState.Ready(channels, listOf(ALL_CHANNELS) + groups)
+        return PlaylistState.Ready(channels, listOf(ALL_CHANNELS, FAVORITES) + groups)
     }
 
     private fun Exception.readable(): String =

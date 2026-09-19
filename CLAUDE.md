@@ -20,7 +20,7 @@ zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Medi
 ```
 
 There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`, currently
-covering `M3uParser`. There is no linter configured (no ktlint/detekt).
+covering `M3uParser` and `ChannelSearch`. There is no linter configured (no ktlint/detekt).
 
 To sideload onto a real Google TV: `adb connect <tv-ip>:5555` then `./gradlew installDebug` (see
 README for the developer-options / pairing steps).
@@ -83,10 +83,16 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   `User-Agent`/`Referer` from three possible sources, in priority order: `#EXTVLCOPT` lines, `#EXTINF`
   attributes, then Kodi-style `url|User-Agent=...&Referer=...` suffixes on the stream URL itself.
 - **`PlaylistRepository`** (`data/PlaylistRepository.kt`) owns both the disk cache
-  (`filesDir/playlist.m3u`) and `SharedPreferences` (playlist URL, last-watched channel URL). It's the
-  only place that talks to `OkHttpClient` or touches `Context`.
+  (`filesDir/playlist.m3u`) and `SharedPreferences` (playlist URL, last-watched channel URL, favorite
+  channel URLs). It's the only place that talks to `OkHttpClient` or touches `Context`.
+- **Favorites and search.** Favorites are a `Set` of stream URLs (like last-watched, keyed by URL so
+  they survive playlist refreshes), exposed as `MainViewModel.favorites` and toggled by holding OK
+  (`ListItem.onLongClick` in the list, key `repeatCount == 1` in the player). `FAVORITES` is a virtual
+  group next to `ALL_CHANNELS`. The search query is hoisted into `OnAirTvApp` (so it survives a trip
+  into the player). A non-blank query overrides the selected group and searches the whole playlist via
+  `ChannelSearch` (a pure function, under test).
 - **Navigation is local `Composable` state, not a nav library.** `OnAirTvApp` in `MainActivity.kt` holds
-  `showSetup`, `selectedGroup`, and `playback: Playback?` (`Playback` = the current channel list +
+  `showSetup`, `selectedGroup`, `searchQuery`, and `playback: Playback?` (`Playback` = the current channel list +
   position) as plain `remember`/`rememberSaveable` state, and decides which screen to show with a
   `when`. Going from the channel list into the player passes the *whole visible channel list* plus a
   position, so zapping (▲/▼) moves through that same filtered/group list without re-querying state.
