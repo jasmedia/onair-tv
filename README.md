@@ -135,3 +135,7 @@ stateDiagram-v2
 4. Full EPG grid.
 5. In-player channel list overlay (OK → mini list, like TiviMate).
 6. Settings: buffer size, decoder preference, stream timeouts.
+
+## License
+
+OnAir TV is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
