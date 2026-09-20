@@ -1,6 +1,7 @@
 package dev.onairtv.app.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SavedPlaylistsTest {
@@ -72,6 +73,35 @@ class SavedPlaylistsTest {
             listOf(SavedPlaylist("A", "http://example.com/ b.m3u")),
             SavedPlaylists.decode(SavedPlaylists.encode(listOf(tabbed))),
         )
+    }
+
+    @Test
+    fun linesStoredBeforeEpgUrlExistedDecodeWithoutOne() {
+        assertEquals(listOf(india), SavedPlaylists.decode("India\t${india.url}"))
+        assertNull(SavedPlaylists.decode("India\t${india.url}").single().epgUrl)
+        // And keep writing the two-field form, so the stored value is byte-identical.
+        assertEquals("India\t${india.url}", SavedPlaylists.encode(listOf(india)))
+    }
+
+    @Test
+    fun epgUrlRoundTrips() {
+        val withEpg = india.copy(epgUrl = "https://example.com/guide.xml.gz")
+        assertEquals(
+            "India\t${india.url}\thttps://example.com/guide.xml.gz",
+            SavedPlaylists.encode(listOf(withEpg)),
+        )
+        assertEquals(listOf(withEpg), SavedPlaylists.decode(SavedPlaylists.encode(listOf(withEpg))))
+    }
+
+    @Test
+    fun blankOrTabbedEpgUrlsCannotCorruptALine() {
+        val tabbed = india.copy(epgUrl = "https://example.com/\tguide.xml")
+        assertEquals(
+            listOf(india.copy(epgUrl = "https://example.com/ guide.xml")),
+            SavedPlaylists.decode(SavedPlaylists.encode(listOf(tabbed))),
+        )
+        assertEquals(listOf(india), SavedPlaylists.decode(SavedPlaylists.encode(listOf(india.copy(epgUrl = "  ")))))
+        assertEquals(listOf(india), SavedPlaylists.decode("India\t${india.url}\t  "))
     }
 
     @Test
