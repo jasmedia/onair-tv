@@ -118,7 +118,7 @@ fun PlayerScreen(
 
             override fun onPlayerError(error: PlaybackException) {
                 val ch = currentChannel
-                if (!triedAsHls && !ch.url.contains(".m3u8", ignoreCase = true)) {
+                if (!triedAsHls && !isHlsUrl(ch.url)) {
                     triedAsHls = true
                     player.playChannel(ch, forceHls = true)
                 } else {
@@ -173,8 +173,7 @@ fun PlayerScreen(
 
     fun zap(delta: Int) {
         if (channels.isEmpty()) return
-        val next = (position + delta).mod(channels.size)
-        onPositionChange(next)
+        onPositionChange(zapPosition(position, delta, channels.size))
     }
 
     Box(
@@ -415,7 +414,7 @@ private fun ExoPlayer.playChannel(channel: Channel, forceHls: Boolean) {
     val item = MediaItem.Builder()
         .setUri(channel.url)
         .apply {
-            if (forceHls || channel.url.contains(".m3u8", ignoreCase = true)) {
+            if (forceHls || isHlsUrl(channel.url)) {
                 setMimeType(MimeTypes.APPLICATION_M3U8)
             }
         }
@@ -426,3 +425,8 @@ private fun ExoPlayer.playChannel(channel: Channel, forceHls: Boolean) {
     prepare()
     play()
 }
+
+/** The position [delta] channels away from [position], wrapping around both ends of the list. */
+internal fun zapPosition(position: Int, delta: Int, size: Int): Int = (position + delta).mod(size)
+
+internal fun isHlsUrl(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)

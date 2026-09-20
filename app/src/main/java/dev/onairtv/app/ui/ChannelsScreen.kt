@@ -54,6 +54,25 @@ import dev.onairtv.app.data.ChannelSearch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * The channels the list shows. A non-blank query searches the whole playlist, whichever group is
+ * selected; a group that's no longer in the playlist falls back to [ALL_CHANNELS].
+ */
+internal fun visibleChannels(
+    state: PlaylistState.Ready,
+    selectedGroup: String,
+    favorites: Set<String>,
+    query: String,
+): List<Channel> {
+    val group = if (selectedGroup in state.groups) selectedGroup else ALL_CHANNELS
+    return when {
+        query.isNotBlank() -> ChannelSearch.filter(state.channels, query)
+        group == ALL_CHANNELS -> state.channels
+        group == FAVORITES -> state.channels.filter { it.url in favorites }
+        else -> state.channels.filter { group in it.groups }
+    }
+}
+
 @Composable
 fun ChannelsScreen(
     state: PlaylistState.Ready,
@@ -74,12 +93,7 @@ fun ChannelsScreen(
     val searching = query.isNotBlank()
 
     val visible = remember(state, group, favorites, query) {
-        when {
-            searching -> ChannelSearch.filter(state.channels, query)
-            group == ALL_CHANNELS -> state.channels
-            group == FAVORITES -> state.channels.filter { it.url in favorites }
-            else -> state.channels.filter { group in it.groups }
-        }
+        visibleChannels(state, selectedGroup, favorites, query)
     }
 
     var editingQuery by remember { mutableStateOf(false) }

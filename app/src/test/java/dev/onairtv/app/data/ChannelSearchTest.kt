@@ -44,4 +44,36 @@ class ChannelSearchTest {
         assertEquals(listOf("Canal Sur Andalucía"), search("andalucia"))
         assertEquals(listOf("Canal Sur Andalucía"), search("Andalucía"))
     }
+
+    @Test
+    fun ignoresExtraWhitespace() {
+        assertEquals(listOf("BBC World News"), search("  bbc    news  "))
+        assertEquals(listOf("BBC World News"), search("\tbbc\n"))
+    }
+
+    @Test
+    fun accentedQueryMatchesPlainName() {
+        assertEquals(listOf("Kairali TV"), search("Kaírálí"))
+    }
+
+    @Test
+    fun matchesInsideWords() {
+        assertEquals(listOf("Asianet News"), search("sianet"))
+        assertEquals(listOf("Canal Sur Andalucía"), search("dalu"))
+    }
+
+    @Test
+    fun emptyChannelListGivesEmptyResult() {
+        assertEquals(emptyList<Channel>(), ChannelSearch.filter(emptyList(), "news"))
+        assertEquals(emptyList<Channel>(), ChannelSearch.filter(emptyList(), ""))
+    }
+
+    @Test
+    fun keepsInputOrder() {
+        val reversed = channels.reversed()
+        assertEquals(
+            listOf("Asianet News", "BBC World News"),
+            ChannelSearch.filter(reversed, "news").map { it.name },
+        )
+    }
 }

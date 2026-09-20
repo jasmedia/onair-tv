@@ -19,8 +19,13 @@ zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Medi
 ./gradlew test --tests "dev.onairtv.app.data.M3uParserTest.parsesAllChannels"  # run one test method
 ```
 
-There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`, currently
-covering `M3uParser`, `ChannelSearch`, and `SavedPlaylists`. There is no linter configured (no ktlint/detekt).
+There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`. The pure
+pieces (`M3uParser`, `ChannelSearch`, `SavedPlaylists`, and the `visibleChannels` / `zapPosition` /
+`isHlsUrl` helpers pulled out of the screens) are plain JUnit. `PlaylistRepositoryTest` and
+`MainViewModelTest` run under Robolectric (needs the JDK 21 below) with OkHttp's `MockWebServer`
+standing in for the playlist host. The ViewModel tests set `Dispatchers.Main` to an
+`UnconfinedTestDispatcher` and wait for loads by joining `viewModelScope`'s child jobs, since
+`download` runs on the real `Dispatchers.IO`. There is no linter configured (no ktlint/detekt).
 
 To sideload onto a real Google TV: `adb connect <tv-ip>:5555` then `./gradlew installDebug` (see
 README for the developer-options / pairing steps).
@@ -79,7 +84,7 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   it differs — this is why the UI can go from `Ready` back to a *different* `Ready` without a `Loading`
   flash in between.
 - **`M3uParser`** (`data/M3uParser.kt`) turns raw M3U text into `List<Channel>`. It's a pure function
-  with no Android dependencies, which is why it's the one thing under test. It resolves per-channel
+  with no Android dependencies, and has the most detailed tests. It resolves per-channel
   `User-Agent`/`Referer` from three possible sources, in priority order: `#EXTVLCOPT` lines, `#EXTINF`
   attributes, then Kodi-style `url|User-Agent=...&Referer=...` suffixes on the stream URL itself.
 - **`PlaylistRepository`** (`data/PlaylistRepository.kt`) owns both the disk cache (one file per

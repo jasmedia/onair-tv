@@ -45,4 +45,50 @@ class SavedPlaylistsTest {
         assertEquals("example.com", SavedPlaylists.defaultName("https://www.example.com/"))
         assertEquals("not a url", SavedPlaylists.defaultName("not a url"))
     }
+
+    @Test
+    fun decodeTrimsWhitespace() {
+        assertEquals(listOf(india), SavedPlaylists.decode("  India \t  ${india.url}  "))
+    }
+
+    @Test
+    fun decodeKeepsFirstOfDuplicateUrls() {
+        val text = "First\t${india.url}\nNews\t${news.url}\nSecond\t${india.url}"
+        assertEquals(
+            listOf(india.copy(name = "First"), news),
+            SavedPlaylists.decode(text),
+        )
+    }
+
+    @Test
+    fun controlCharactersInUrlsAreCleaned() {
+        val odd = SavedPlaylist("Name\r", "http://example.com/a.m3u\r\n")
+        assertEquals(
+            listOf(SavedPlaylist("Name", "http://example.com/a.m3u")),
+            SavedPlaylists.decode(SavedPlaylists.encode(listOf(odd))),
+        )
+        val tabbed = SavedPlaylist("A", "http://example.com/\tb.m3u")
+        assertEquals(
+            listOf(SavedPlaylist("A", "http://example.com/ b.m3u")),
+            SavedPlaylists.decode(SavedPlaylists.encode(listOf(tabbed))),
+        )
+    }
+
+    @Test
+    fun upsertIntoEmptyListAppends() {
+        assertEquals(listOf(india), SavedPlaylists.upsert(emptyList(), india))
+    }
+
+    @Test
+    fun defaultNameEdgeCases() {
+        assertEquals("live (example.com)", SavedPlaylists.defaultName("https://www.example.com/live.m3u8"))
+        assertEquals("list (example.com)", SavedPlaylists.defaultName("https://example.com/tv/list.m3u"))
+        assertEquals("example.com", SavedPlaylists.defaultName("https://example.com"))
+        assertEquals(
+            "a (example.com)",
+            SavedPlaylists.defaultName("https://example.com/a.m3u|User-Agent=Kodi"),
+        )
+        assertEquals("sports", SavedPlaylists.defaultName("lists/sports.m3u"))
+        assertEquals("http://example.com/my list.m3u", SavedPlaylists.defaultName("http://example.com/my list.m3u"))
+    }
 }
