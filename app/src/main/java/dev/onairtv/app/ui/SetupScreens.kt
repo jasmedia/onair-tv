@@ -37,6 +37,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
+import dev.onairtv.app.data.SavedPlaylist
 
 /**
  * Quick-pick playlists from the iptv-org project, so nobody has to type a URL with a remote.
@@ -51,85 +52,118 @@ private val PRESETS = listOf(
 
 @Composable
 fun SetupScreen(
-    onSubmit: (url: String, name: String?) -> Unit,
+    onSubmit: (url: String, name: String?, epgUrl: String?) -> Unit,
     onCancel: (() -> Unit)?,
+    initial: SavedPlaylist? = null,
 ) {
-    var url by rememberSaveable { mutableStateOf("") }
-    var fieldFocused by remember { mutableStateOf(false) }
+    var url by rememberSaveable(initial) { mutableStateOf(initial?.url.orEmpty()) }
+    var epgUrl by rememberSaveable(initial) { mutableStateOf(initial?.epgUrl.orEmpty()) }
     val firstFocus = remember { FocusRequester() }
 
     if (onCancel != null) BackHandler(onBack = onCancel)
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
-    val submit = { if (url.isNotBlank()) onSubmit(url, null) }
+    val submit = { if (url.isNotBlank()) onSubmit(url, initial?.name, epgUrl) }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.widthIn(max = 760.dp).padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Add a playlist", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                if (initial == null) "Add a playlist" else "Edit ${initial.name}",
+                style = MaterialTheme.typography.headlineMedium,
+            )
             Text(
                 "Enter an M3U playlist URL, or pick one of the iptv-org playlists below.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            BasicTextField(
+            UrlField(
                 value = url,
                 onValueChange = { url = it },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { fieldFocused = it.isFocused }
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                    .border(
-                        width = 2.dp,
-                        color = if (fieldFocused) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
-                    )
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                decorationBox = { inner ->
-                    if (url.isEmpty()) {
-                        Text(
-                            "https://example.com/playlist.m3u",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    inner()
-                },
+                placeholder = "https://example.com/playlist.m3u",
+                onDone = submit,
+            )
+
+            Text(
+                "TV guide (XMLTV) — leave blank to use the playlist's own",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            UrlField(
+                value = epgUrl,
+                onValueChange = { epgUrl = it },
+                placeholder = "https://example.com/guide.xml.gz",
+                onDone = submit,
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = submit, modifier = Modifier.focusRequester(firstFocus)) {
-                    Text("Load playlist")
+                    Text(if (initial == null) "Load playlist" else "Save")
                 }
                 if (onCancel != null) {
                     OutlinedButton(onClick = onCancel) { Text("Cancel") }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-            Text("Quick picks", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PRESETS.forEach { (label, presetUrl) ->
-                    OutlinedButton(onClick = { url = presetUrl; onSubmit(presetUrl, label) }) {
-                        Text(label)
+            // Presets never set a guide URL; the iptv-org lists advertise their own.
+            if (initial == null) {
+                Spacer(Modifier.height(8.dp))
+                Text("Quick picks", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PRESETS.forEach { (label, presetUrl) ->
+                        OutlinedButton(onClick = { url = presetUrl; onSubmit(presetUrl, label, null) }) {
+                            Text(label)
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun UrlField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onDone: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Uri,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+            .border(
+                width = 2.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        decorationBox = { inner ->
+            if (value.isEmpty()) {
+                Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            inner()
+        },
+    )
 }
 
 @Composable

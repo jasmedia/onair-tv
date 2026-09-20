@@ -27,12 +27,13 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import dev.onairtv.app.data.SavedPlaylist
 
-/** Saved playlists: OK switches to one, ▶ reaches its Remove button. */
+/** Saved playlists: OK switches to one, ▶ reaches its EPG and Remove buttons. */
 @Composable
 fun PlaylistsScreen(
     playlists: List<SavedPlaylist>,
     activeUrl: String?,
     onSelect: (SavedPlaylist) -> Unit,
+    onEditEpg: (SavedPlaylist) -> Unit,
     onRemove: (SavedPlaylist) -> Unit,
     onAdd: () -> Unit,
     onBack: () -> Unit,
@@ -52,7 +53,7 @@ fun PlaylistsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Playlists", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "OK opens a playlist. Press ▶ on a playlist to remove it.",
+                    "OK opens a playlist. Press ▶ on a playlist to set its TV guide or remove it.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -86,12 +87,17 @@ fun PlaylistsScreen(
                             Text(playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         },
                         supportingContent = {
-                            Text(playlist.url, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                playlist.url + if (playlist.epgUrl != null) "  ·  EPG set" else "",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         },
                         trailingContent = if (active) {
                             { Text("Current", style = MaterialTheme.typography.labelLarge) }
                         } else null,
                     )
+                    OutlinedButton(onClick = { onEditEpg(playlist) }) { Text("EPG") }
                     OutlinedButton(onClick = { onRemove(playlist) }) { Text("Remove") }
                 }
             }
