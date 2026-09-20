@@ -3,6 +3,7 @@ package dev.onairtv.app.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
+import okio.Buffer
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -15,8 +16,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.zip.GZIPOutputStream
 
 @RunWith(RobolectricTestRunner::class)
 class PlaylistRepositoryTest {
@@ -36,10 +39,38 @@ class PlaylistRepositoryTest {
         server.shutdown()
     }
 
-    private fun m3u(vararg names: String) = buildString {
-        appendLine("#EXTM3U")
-        names.forEach { appendLine("#EXTINF:-1 group-title=\"G\",$it\nhttp://stream.example/$it.m3u8") }
+    private fun m3u(vararg names: String, epgUrl: String? = null) = buildString {
+        appendLine("#EXTM3U" + (epgUrl?.let { " url-tvg=\"$it\"" } ?: ""))
+        names.forEach {
+            appendLine("#EXTINF:-1 tvg-id=\"$it.x\" group-title=\"G\",$it\nhttp://stream.example/$it.m3u8")
+        }
     }
+
+    /** 2026-09-20T12:00:00Z, the instant [xmltv] is written around. */
+    private val now = 1_789_905_600_000L
+
+    private fun xmltv(channelId: String, title: String) = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE tv SYSTEM "xmltv.dtd">
+        <tv>
+          <channel id="$channelId"><display-name>$channelId</display-name></channel>
+          <programme start="20260920113000 +0000" stop="20260920123000 +0000" channel="$channelId">
+            <title>$title</title>
+          </programme>
+        </tv>
+    """.trimIndent()
+
+    private fun gzipped(text: String): Buffer = Buffer().write(
+        ByteArrayOutputStream().also { out ->
+            GZIPOutputStream(out).use { it.write(text.toByteArray()) }
+        }.toByteArray(),
+    )
+
+    private val oneChannel = M3uParser.parse(m3u("One"))
+
+    private fun nowTitle(guide: EpgGuide?) = guide?.nowNext(oneChannel.single(), now)?.now?.title
+
+    private fun epgCacheFiles() = File(context.filesDir, "epg").listFiles().orEmpty().toList()
 
     private fun url(path: String) = server.url(path).toString()
 
@@ -128,6 +159,126 @@ class PlaylistRepositoryTest {
 
         assertNull(repo.loadCached(url("/a.m3u")))
         assertEquals(listOf("B"), repo.loadCached(url("/b.m3u"))?.map { it.name })
+    }
+
+    // ---- EPG ------------------------------------------------------------------------------
+
+    @Test
+    fun detectedEpgUrlComesFromTheCachedHeader() = runTest {
+        val repo = PlaylistRepository(context)
+        val url = url("/a.m3u")
+        assertNull(repo.detectedEpgUrl(url)) // nothing cached yet
+
+        server.enqueue(MockResponse().setBody(m3u("One", epgUrl = "http://guide.example/g.xml")))
+        repo.download(url)
+
+        assertEquals("http://guide.example/g.xml", repo.detectedEpgUrl(url))
+        assertEquals("http://guide.example/g.xml", PlaylistRepository(context).detectedEpgUrl(url))
+    }
+
+    @Test
+    fun detectedEpgUrlIsNullForAPlaylistWithoutAHeader() = runTest {
+        val repo = PlaylistRepository(context)
+        server.enqueue(MockResponse().setBody(m3u("One")))
+        repo.download(url("/a.m3u"))
+
+        assertNull(repo.detectedEpgUrl(url("/a.m3u")))
+    }
+
+    @Test
+    fun epgGuideDownloadsCachesAndParses() = runTest {
+        val repo = PlaylistRepository(context)
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "The Show")))
+
+        val guide = repo.epgGuide(url("/g.xml"), oneChannel, now)
+
+        assertEquals("The Show", nowTitle(guide))
+        assertEquals(DEFAULT_USER_AGENT, server.takeRequest().getHeader("User-Agent"))
+        assertEquals(1, epgCacheFiles().size)
+    }
+
+    @Test
+    fun epgGuideParsesAGzippedBody() = runTest {
+        val repo = PlaylistRepository(context)
+        server.enqueue(MockResponse().setBody(gzipped(xmltv("One.x", "Gzipped Show"))))
+
+        assertEquals("Gzipped Show", nowTitle(repo.epgGuide(url("/g.xml.gz"), oneChannel, now)))
+        // Stored as it arrived, so it re-reads from the cache without a second request.
+        assertEquals("Gzipped Show", nowTitle(repo.epgGuide(url("/g.xml.gz"), oneChannel, now)))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun aFreshCacheIsNotRefetchedButAStaleOneIs() = runTest {
+        val repo = PlaylistRepository(context)
+        val epgUrl = url("/g.xml")
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "First")))
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "Second")))
+
+        assertEquals("First", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
+        assertEquals("First", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
+        assertEquals(1, server.requestCount)
+
+        val cached = epgCacheFiles().single()
+        cached.setLastModified(System.currentTimeMillis() - EPG_MAX_AGE_MILLIS - 1)
+
+        assertEquals("Second", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun aFailedRefreshKeepsUsingTheStaleGuide() = runTest {
+        val repo = PlaylistRepository(context)
+        val epgUrl = url("/g.xml")
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "Stale But Good")))
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        repo.epgGuide(epgUrl, oneChannel, now)
+        epgCacheFiles().single()
+            .setLastModified(System.currentTimeMillis() - EPG_MAX_AGE_MILLIS - 1)
+
+        assertEquals("Stale But Good", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
+        assertEquals(1, epgCacheFiles().size) // and the good copy is still there
+    }
+
+    @Test
+    fun anEpgFailureWithNoCacheReturnsNullRatherThanThrowing() = runTest {
+        val repo = PlaylistRepository(context)
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        assertNull(repo.epgGuide(url("/g.xml"), oneChannel, now))
+        assertEquals(emptyList<File>(), epgCacheFiles())
+    }
+
+    @Test
+    fun aCorruptCachedGuideIsDiscarded() = runTest {
+        val repo = PlaylistRepository(context)
+        val epgUrl = url("/g.xml")
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "Good")))
+        repo.epgGuide(epgUrl, oneChannel, now)
+
+        epgCacheFiles().single().writeText("<tv><programme>truncated")
+
+        assertNull(repo.epgGuide(epgUrl, oneChannel, now))
+        assertEquals(emptyList<File>(), epgCacheFiles())
+    }
+
+    @Test
+    fun pruneRemovesOnlyLongUnusedGuides() = runTest {
+        val repo = PlaylistRepository(context)
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "Keep")))
+        server.enqueue(MockResponse().setBody(xmltv("One.x", "Drop")))
+        repo.epgGuide(url("/keep.xml"), oneChannel, now)
+        repo.epgGuide(url("/drop.xml"), oneChannel, now)
+        assertEquals(2, epgCacheFiles().size)
+
+        val doomed = File(context.filesDir, "epg/${epgCacheFiles().map { it.name }.last()}")
+        doomed.setLastModified(
+            System.currentTimeMillis() - EPG_PRUNE_AGE_MILLIS - 1,
+        )
+        repo.pruneEpgCache()
+
+        assertEquals(1, epgCacheFiles().size)
     }
 
     @Test
