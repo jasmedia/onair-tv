@@ -10,13 +10,17 @@ full-screen with remote-control zapping.
 
 - Add a playlist by URL, or pick one of the iptv-org presets (India, Malayalam, News, All).
 - Multiple saved playlists: **Playlists** (on the channel list) switches between them, adds new
-  ones, or removes them (press ▶ on a playlist to reach its Remove button).
+  ones, sets a TV guide URL, or removes them (press ▶ on a playlist to reach those buttons).
 - Each playlist is cached on disk, so the app opens instantly and refreshes in the background.
 - Channel browser: a group list on the left and channels with logos on the right.
 - Favorites: hold OK on a channel (in the list or while watching) to star it. Starred channels
   appear in the **★ Favorites** group.
 - Search: find channels by name across the whole playlist, ignoring case and accents. Each word
   must match, in any order. Back clears the search.
+- TV guide: **now / next** with a progress bar on every channel row and in the player banner, from
+  the XMLTV guide the playlist advertises (`url-tvg`) or one you enter yourself. Channels are
+  matched on `tvg-id`, then on display name; a channel the guide doesn't cover shows its groups as
+  before. The guide is cached and refreshed every 6 hours.
 - Full-screen playback:
   - ▲/▼ or CH+/CH− switch channels. Quick presses are debounced.
   - OK opens a mini channel list over the video, focused on the current channel. Pick one with
@@ -38,11 +42,14 @@ app/src/main/java/dev/onairtv/app/
 │   ├── M3uParser.kt         # extended-M3U parser → List<Channel>
 │   ├── ChannelSearch.kt     # channel-name search (case/accent-insensitive)
 │   ├── SavedPlaylists.kt    # saved-playlist list: storage format, default names
-│   └── PlaylistRepository.kt# download, disk cache, preferences, favorites
+│   ├── Epg.kt               # programmes, now/next lookup, XMLTV time parsing
+│   ├── XmltvParser.kt       # streaming SAX parse of an XMLTV guide
+│   └── PlaylistRepository.kt# download, disk cache, preferences, favorites, guides
 └── ui/
-    ├── SetupScreens.kt      # add-playlist, loading, error screens
-    ├── PlaylistsScreen.kt   # saved playlists: switch, add, remove
+    ├── SetupScreens.kt      # add/edit-playlist, loading, error screens
+    ├── PlaylistsScreen.kt   # saved playlists: switch, add, set guide, remove
     ├── ChannelsScreen.kt    # groups + channel list (D-pad focus handling)
+    ├── EpgUi.kt             # the now/next clock, row content, time formatting
     └── PlayerScreen.kt      # ExoPlayer, zapping, channel banner
 ```
 
@@ -145,9 +152,8 @@ stateDiagram-v2
 
 ## Next steps
 
-1. XMLTV EPG import → "now / next" on each channel.
-2. Full EPG grid.
-3. Settings: buffer size, decoder preference, stream timeouts.
+1. Full EPG grid.
+2. Settings: buffer size, decoder preference, stream timeouts.
 
 ## License
 

@@ -15,13 +15,15 @@ zapping. Stack: Kotlin, Jetpack Compose for TV (`androidx.tv:tv-material`), Medi
 ./gradlew assembleDebug           # build debug APK
 ./gradlew installDebug            # build + install on a connected/adb-connected device
 ./gradlew test                    # run all unit tests (app/src/test)
-./gradlew test --tests "dev.onairtv.app.data.M3uParserTest"          # run one test class
-./gradlew test --tests "dev.onairtv.app.data.M3uParserTest.parsesAllChannels"  # run one test method
+# --tests needs the concrete task, not the `test` lifecycle task:
+./gradlew testDebugUnitTest --tests "dev.onairtv.app.data.M3uParserTest"          # one test class
+./gradlew testDebugUnitTest --tests "dev.onairtv.app.data.M3uParserTest.parsesAllChannels"  # one method
 ```
 
 There is no emulator/instrumented test suite — only JVM unit tests under `app/src/test`. The pure
-pieces (`M3uParser`, `ChannelSearch`, `SavedPlaylists`, and the `visibleChannels` / `zapPosition` /
-`isHlsUrl` helpers pulled out of the screens) are plain JUnit. `PlaylistRepositoryTest` and
+pieces (`M3uParser`, `ChannelSearch`, `SavedPlaylists`, `Epg`, `XmltvParser`, and the
+`visibleChannels` / `zapPosition` / `isHlsUrl` / EPG-formatting helpers pulled out of the screens)
+are plain JUnit. `PlaylistRepositoryTest` and
 `MainViewModelTest` run under Robolectric (needs the JDK 21 below) with OkHttp's `MockWebServer`
 standing in for the playlist host. The ViewModel tests set `Dispatchers.Main` to an
 `UnconfinedTestDispatcher` and wait for loads by joining `viewModelScope`'s child jobs, since
@@ -121,6 +123,27 @@ Single-module app (`:app`), no DI framework — one `PlaylistRepository` is inst
   the player's `onKeyEvent` returns `false` so the rows get the D-pad. Back is handled in the overlay's
   `onPreviewKeyEvent`, not a `BackHandler`: with a row focused, Compose consumes Back to move focus
   out of it, so the back dispatcher never fires.
+- **EPG ("now / next").** A second, independent flow: `MainViewModel.guide: StateFlow<EpgGuide>`,
+  loaded by its own `epgJob` at the end of `open`'s load job, never a field on `PlaylistState.Ready`
+  — a guide that fails or is slow cannot then break or delay the playlist. The guide URL comes from
+  `url-tvg` / `x-tvg-url` on the `#EXTM3U` header (`M3uParser.tvgUrl`, deliberately *not* part of
+  `parse`, whose result is compared to decide whether to swap in a fresh playlist), overridden by
+  `SavedPlaylist.epgUrl` when the user sets one. `XmltvParser` is a streaming SAX parse that is
+  handed the playlist's channels and drops every other channel's programmes, and anything outside a
+  24 h horizon, at parse time — real guides are 10–100 MB on a ~192 MB heap. It uses
+  `javax.xml.parsers` rather than `android.util.Xml` so it stays plain-JUnit testable (the
+  `org.xmlpull` classes in the stubbed `android.jar` are Robolectric-only), and installs an
+  `EntityResolver` returning nothing, because guides open with `<!DOCTYPE tv SYSTEM "xmltv.dtd">`
+  and Xerces would otherwise fetch it. `PlaylistRepository` caches the raw response bytes (still
+  gzipped if that's how they arrived) at `filesDir/epg/<sha256(epgUrl)>.xml`, refreshing when the
+  file's mtime is over 6 h old and returning null rather than throwing at every step.
+- **The EPG clock lives in the composition, not the ViewModel** (`rememberEpgClock` in `ui/EpgUi.kt`,
+  called once in `OnAirTvApp`). Two reasons: an always-on coroutine in `viewModelScope` would hang
+  every ViewModel test, which waits for the scope to go idle; and passing the tick down as an unread
+  `State<Long>` inside `EpgSource` means only the rows that call `rememberNowNext` resubscribe, so a
+  tick recomposes ~10 visible rows instead of the whole tree. `ChannelBanner` looks its own
+  programme up internally for the same reason — reading the clock in `PlayerScreen` would recompose
+  the `AndroidView` every 30 s.
 - Focus handling for D-pad navigation is manual in a few places (`FocusRequester` +
   `LaunchedEffect { requestFocus() }` wrapped in `runCatching`), notably to restore focus to the
   last-watched channel row when returning to `ChannelsScreen` from the player.
