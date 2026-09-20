@@ -4,10 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.util.TimeZone
 import java.util.zip.GZIPOutputStream
 
@@ -210,6 +212,30 @@ class XmltvParserTest {
     @Test
     fun aGuideWithNothingForThePlaylistIsEmpty() {
         assertTrue(parse(sample, listOf(channel("Some Other Channel"))).isEmpty)
+    }
+
+    @Test
+    fun anInterruptedParseGivesUpInsteadOfFinishing() {
+        // 2000 programmes, so the every-512 cancellation check is reached well before the end.
+        val many = buildString {
+            append("<tv><channel id=\"a.x\"><display-name>A</display-name></channel>")
+            repeat(2_000) {
+                append("<programme start=\"20260920113000 +0000\" stop=\"20260920123000 +0000\" ")
+                append("channel=\"a.x\"><title>P$it</title></programme>")
+            }
+            append("</tv>")
+        }
+        val a = channel("A", tvgId = "a.x")
+
+        Thread.currentThread().interrupt()
+        try {
+            parse(many, listOf(a))
+            fail("Expected the parse to give up")
+        } catch (e: Exception) {
+            assertTrue(e.toString(), e is InterruptedIOException || e.cause is InterruptedIOException)
+        } finally {
+            Thread.interrupted() // clear the flag for the tests that follow
+        }
     }
 
     // ---- maybeGunzip ----------------------------------------------------------------------

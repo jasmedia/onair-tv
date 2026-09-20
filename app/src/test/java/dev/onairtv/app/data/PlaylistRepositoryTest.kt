@@ -219,8 +219,8 @@ class PlaylistRepositoryTest {
         assertEquals("First", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
         assertEquals(1, server.requestCount)
 
-        val cached = epgCacheFiles().single()
-        cached.setLastModified(System.currentTimeMillis() - EPG_MAX_AGE_MILLIS - 1)
+        // Backdated against the same `now` epgGuide is given, not the wall clock.
+        epgCacheFiles().single().setLastModified(now - EPG_MAX_AGE_MILLIS - 1)
 
         assertEquals("Second", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
         assertEquals(2, server.requestCount)
@@ -234,8 +234,7 @@ class PlaylistRepositoryTest {
         server.enqueue(MockResponse().setResponseCode(500))
 
         repo.epgGuide(epgUrl, oneChannel, now)
-        epgCacheFiles().single()
-            .setLastModified(System.currentTimeMillis() - EPG_MAX_AGE_MILLIS - 1)
+        epgCacheFiles().single().setLastModified(now - EPG_MAX_AGE_MILLIS - 1)
 
         assertEquals("Stale But Good", nowTitle(repo.epgGuide(epgUrl, oneChannel, now)))
         assertEquals(1, epgCacheFiles().size) // and the good copy is still there

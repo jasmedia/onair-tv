@@ -141,11 +141,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun startEpg(playlistUrl: String, channels: List<Channel>) {
         epgJob?.cancel()
         epgJob = viewModelScope.launch {
-            runCatching {
+            try {
                 val saved = _playlists.value.firstOrNull { it.url == playlistUrl }
                 // A URL the user typed beats the one the playlist advertises.
-                val epgUrl = saved?.epgUrl ?: repo.detectedEpgUrl(playlistUrl) ?: return@runCatching
+                val epgUrl = saved?.epgUrl ?: repo.detectedEpgUrl(playlistUrl) ?: return@launch
                 repo.epgGuide(epgUrl, channels)?.let { _guide.value = it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No guide just means the rows keep showing their groups.
             }
         }
     }

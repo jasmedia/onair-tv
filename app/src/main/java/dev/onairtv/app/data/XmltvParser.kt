@@ -4,6 +4,7 @@ import org.xml.sax.Attributes
 import org.xml.sax.EntityResolver
 import org.xml.sax.InputSource
 import org.xml.sax.helpers.DefaultHandler
+import java.io.InterruptedIOException
 import java.io.InputStream
 import java.io.PushbackInputStream
 import java.io.StringReader
@@ -20,6 +21,10 @@ import javax.xml.parsers.SAXParserFactory
  *
  * SAX (`javax.xml.parsers`) rather than `android.util.Xml`: it resolves to the JDK in unit tests,
  * so this is plain-JUnit testable like [M3uParser], instead of needing Robolectric.
+ *
+ * A parse of a real guide runs for seconds, so it watches for its thread being interrupted and
+ * gives up: cancelling the job that started it (switching playlists does) must actually stop the
+ * work, not just discard the result. Call it inside `runInterruptible` to hook that up.
  */
 object XmltvParser {
 
@@ -100,6 +105,8 @@ private class XmltvHandler(
     private var depth = 0
     /** Depth at which an uninteresting subtree started; while set, elements only count depth. */
     private var skipDepth = -1
+    /** Counts <programme> elements, to check for cancellation without doing it per element. */
+    private var seen = 0
 
     // Current <channel>
     private var channelId: String? = null
@@ -123,7 +130,13 @@ private class XmltvHandler(
                 if (channelId == null) skipDepth = depth
             }
 
-            "programme" -> startProgramme(attrs)
+            "programme" -> {
+                // Cheap, but often enough to abandon a 100k-programme file promptly.
+                if (++seen % 512 == 0 && Thread.currentThread().isInterrupted) {
+                    throw InterruptedIOException("Guide parse cancelled")
+                }
+                startProgramme(attrs)
+            }
 
             "display-name" -> if (channelId != null) text = StringBuilder()
 

@@ -1,9 +1,11 @@
 package dev.onairtv.app.data
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -115,12 +117,28 @@ class PlaylistRepository(context: Context) {
         pruneEpgCache()
         val file = epgFile(epgUrl)
         if (!file.exists() || now - file.lastModified() > EPG_MAX_AGE_MILLIS) {
-            runCatching { downloadEpg(epgUrl, file) }
+            try {
+                downloadEpg(epgUrl, file)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Fall through to whatever stale copy is on disk.
+            }
         }
         if (!file.exists()) return@withContext null
-        runCatching {
-            FileInputStream(file).use { XmltvParser.parse(maybeGunzip(it).buffered(), channels, now) }
-        }.onFailure { file.delete() }.getOrNull() // a corrupt cache is worse than none
+
+        try {
+            // runInterruptible, so cancelling this job interrupts the (multi-second) parse rather
+            // than leaving it to burn CPU for a result nobody will read.
+            runInterruptible {
+                FileInputStream(file).use { XmltvParser.parse(maybeGunzip(it).buffered(), channels, now) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            file.delete() // a corrupt cache is worse than none
+            null
+        }
     }
 
     /** Deletes guides nothing has asked for in a week. */

@@ -28,8 +28,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -124,6 +131,10 @@ fun SetupScreen(
     }
 }
 
+/**
+ * A single-line URL field. ▲/▼ move focus out of it rather than the cursor within it: a text field
+ * otherwise swallows the D-pad, and on a remote there is no other way to reach the next field.
+ */
 @Composable
 private fun UrlField(
     value: String,
@@ -132,6 +143,7 @@ private fun UrlField(
     onDone: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     BasicTextField(
         value = value,
@@ -149,6 +161,15 @@ private fun UrlField(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                val direction = when (event.key) {
+                    Key.DirectionUp -> FocusDirection.Up
+                    Key.DirectionDown -> FocusDirection.Down
+                    else -> return@onPreviewKeyEvent false
+                }
+                if (event.type == KeyEventType.KeyDown) focusManager.moveFocus(direction)
+                true
+            }
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
             .border(
                 width = 2.dp,
