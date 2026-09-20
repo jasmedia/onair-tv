@@ -27,6 +27,12 @@ object M3uParser {
 
     private val attrRegex = Regex("""([A-Za-z0-9_-]+)="([^"]*)"""")
 
+    // Providers write this both quoted and bare, so it can't share attrRegex (which needs quotes).
+    private val tvgUrlRegex = Regex(
+        """(?:url-tvg|x-tvg-url)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))""",
+        RegexOption.IGNORE_CASE,
+    )
+
     fun parse(text: String): List<Channel> {
         val channels = ArrayList<Channel>()
         var info: String? = null
@@ -81,6 +87,25 @@ object M3uParser {
             }
         }
         return channels
+    }
+
+    /**
+     * The XMLTV guide URL a playlist advertises on its `#EXTM3U` header line, as `url-tvg` or
+     * `x-tvg-url`. Some providers list several guides, comma-separated; only the first is used.
+     *
+     * Kept out of [parse] on purpose: the channel list is compared to decide whether to swap in a
+     * freshly downloaded playlist, and a header-only change must not count as a different list.
+     */
+    fun tvgUrl(text: String): String? {
+        for (raw in text.lineSequence().take(20)) {
+            val line = raw.trim().removePrefix("\uFEFF")
+            if (line.startsWith("#EXTINF", ignoreCase = true)) break
+            if (!line.startsWith("#EXTM3U", ignoreCase = true)) continue
+            val match = tvgUrlRegex.find(line) ?: return null
+            val value = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: return null
+            return value.substringBefore(',').trim().ifEmpty { null }
+        }
+        return null
     }
 
     private fun buildChannel(

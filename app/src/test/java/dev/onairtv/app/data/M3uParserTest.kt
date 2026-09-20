@@ -233,6 +233,54 @@ class M3uParserTest {
     }
 
     @Test
+    fun tvgUrlReadsTheHeader() {
+        assertEquals("https://example.com/guide.xml", M3uParser.tvgUrl(sample))
+        assertEquals(
+            "http://guide.example/x.xml.gz",
+            M3uParser.tvgUrl("#EXTM3U url-tvg=http://guide.example/x.xml.gz\n#EXTINF:-1,A\nhttp://a/1"),
+        )
+        assertEquals(
+            "https://g.example/a.xml",
+            M3uParser.tvgUrl("#EXTM3U URL-TVG='https://g.example/a.xml' x-tvg-url=\"ignored\""),
+        )
+    }
+
+    @Test
+    fun tvgUrlTakesOnlyTheFirstOfACommaSeparatedList() {
+        assertEquals(
+            "https://g.example/a.xml",
+            M3uParser.tvgUrl("#EXTM3U url-tvg=\"https://g.example/a.xml,https://g.example/b.xml\""),
+        )
+        assertEquals(
+            "https://g.example/a.xml",
+            M3uParser.tvgUrl("#EXTM3U url-tvg=https://g.example/a.xml,https://g.example/b.xml"),
+        )
+    }
+
+    @Test
+    fun tvgUrlSkipsBomAndLeadingLines() {
+        assertEquals(
+            "https://g.example/a.xml",
+            M3uParser.tvgUrl("\uFEFF#EXTM3U url-tvg=\"https://g.example/a.xml\""),
+        )
+        assertEquals(
+            "https://g.example/a.xml",
+            M3uParser.tvgUrl("\n  \n#EXTM3U url-tvg=\"https://g.example/a.xml\"\n#EXTINF:-1,A\nhttp://a/1"),
+        )
+    }
+
+    @Test
+    fun tvgUrlIsNullWhenAbsentOrUnreachable() {
+        assertNull(M3uParser.tvgUrl(""))
+        assertNull(M3uParser.tvgUrl("#EXTM3U\n#EXTINF:-1,A\nhttp://a/1"))
+        assertNull(M3uParser.tvgUrl("<html>not a playlist</html>"))
+        assertNull(M3uParser.tvgUrl("#EXTM3U url-tvg=\"\""))
+        // A header past the first #EXTINF, or past the 20-line window, is not looked for.
+        assertNull(M3uParser.tvgUrl("#EXTINF:-1,A\nhttp://a/1\n#EXTM3U url-tvg=\"https://g.example/a.xml\""))
+        assertNull(M3uParser.tvgUrl("\n".repeat(25) + "#EXTM3U url-tvg=\"https://g.example/a.xml\""))
+    }
+
+    @Test
     fun indicesAreSequential() {
         val channels = M3uParser.parse(sample + "\nhttp://orphan.example/x\n#EXTINF:-1,Last\nhttp://last.example/")
         assertEquals(listOf(0, 1, 2, 3), channels.map { it.index })
