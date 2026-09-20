@@ -70,6 +70,7 @@ import coil.compose.AsyncImage
 import dev.onairtv.app.R
 import dev.onairtv.app.data.Channel
 import dev.onairtv.app.data.DEFAULT_USER_AGENT
+import dev.onairtv.app.data.NowNext
 import kotlinx.coroutines.delay
 
 private enum class Status { Loading, Playing, Failed }
@@ -83,6 +84,7 @@ fun PlayerScreen(
     onChannelStarted: (Channel) -> Unit,
     favorites: Set<String>,
     onToggleFavorite: (Channel) -> Unit,
+    epg: EpgSource,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -243,6 +245,7 @@ fun PlayerScreen(
                 isFavorite = channel.url in favorites,
                 status = status,
                 errorText = errorText,
+                epg = epg,
             )
         }
 
@@ -256,6 +259,7 @@ fun PlayerScreen(
                 channels = channels,
                 position = position,
                 favorites = favorites,
+                epg = epg,
                 onSelect = { index ->
                     showList = false
                     if (index != position) onPositionChange(index)
@@ -277,6 +281,7 @@ private fun ChannelListOverlay(
     channels: List<Channel>,
     position: Int,
     favorites: Set<String>,
+    epg: EpgSource,
     onSelect: (Int) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
     onDismiss: () -> Unit,
@@ -334,6 +339,7 @@ private fun ChannelListOverlay(
                     channel = ch,
                     number = index + 1,
                     isFavorite = ch.url in favorites,
+                    epg = epg,
                     onClick = { onSelect(index) },
                     onLongClick = { onToggleFavorite(ch) },
                     modifier = if (index == position) {
@@ -353,7 +359,12 @@ private fun ChannelBanner(
     isFavorite: Boolean,
     status: Status,
     errorText: String?,
+    epg: EpgSource,
 ) {
+    // Looked up here rather than in PlayerScreen: the clock ticks every 30 s, and reading it any
+    // higher would recompose the whole player, AndroidView and all.
+    val nowNext = rememberNowNext(epg, channel)
+    val at = epg.clock.value
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -380,21 +391,69 @@ private fun ChannelBanner(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                when (status) {
-                    Status.Loading -> "Connecting…"
-                    Status.Playing -> channel.groups.joinToString(" · ")
-                    Status.Failed -> "Channel unavailable" + (errorText?.let { " ($it)" } ?: "")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (status == Status.Failed) Color(0xFFFF8A80) else Color(0xFFB0B8C8),
-            )
+            when (status) {
+                Status.Playing -> BannerNowNext(nowNext, at, channel.groups.joinToString(" · "))
+                else -> Text(
+                    if (status == Status.Loading) "Connecting…"
+                    else "Channel unavailable" + (errorText?.let { " ($it)" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (status == Status.Failed) Color(0xFFFF8A80) else Color(0xFFB0B8C8),
+                )
+            }
         }
         Text(
             "$number / $total   ▲▼ switch · OK list · Hold OK ★ · Back exit",
             style = MaterialTheme.typography.labelMedium,
             color = Color(0xFF8A93A6),
         )
+    }
+}
+
+/** What's on now and next under the channel name, falling back to the groups without a guide. */
+@Composable
+private fun BannerNowNext(nowNext: NowNext?, at: Long, fallback: String) {
+    val now = nowNext?.now
+    val next = nowNext?.next
+    if (now == null && next == null) {
+        Text(fallback, style = MaterialTheme.typography.bodyMedium, color = Color(0xFFB0B8C8))
+        return
+    }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                now?.title ?: "Nothing scheduled",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (now != null) {
+                Text(
+                    "  ${formatClock(now.start)} – ${formatClock(now.stop)} · ${remainingLabel(at, now.stop)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFFB0B8C8),
+                    maxLines = 1,
+                )
+            }
+        }
+        if (now != null) {
+            ProgressBar(
+                fraction = progressFraction(at, now.start, now.stop),
+                modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                track = Color.White.copy(alpha = 0.25f),
+            )
+        }
+        if (next != null) {
+            Text(
+                "Next: ${next.title}",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFF8A93A6),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

@@ -20,11 +20,13 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.darkColorScheme
 import dev.onairtv.app.data.Channel
 import dev.onairtv.app.ui.ChannelsScreen
+import dev.onairtv.app.ui.EpgSource
 import dev.onairtv.app.ui.ErrorScreen
 import dev.onairtv.app.ui.LoadingScreen
 import dev.onairtv.app.ui.PlayerScreen
 import dev.onairtv.app.ui.PlaylistsScreen
 import dev.onairtv.app.ui.SetupScreen
+import dev.onairtv.app.ui.rememberEpgClock
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +48,12 @@ private data class Playback(val channels: List<Channel>, val position: Int)
 private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
+
+    // No `by` and no read of clock.value here: a tick must recompose the rows showing a programme,
+    // not this whole tree.
+    val guide by vm.guide.collectAsStateWithLifecycle()
+    val clock = rememberEpgClock()
+    val epg = remember(guide, clock) { EpgSource(guide, clock) }
 
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val activeUrl by vm.activeUrl.collectAsStateWithLifecycle()
@@ -121,6 +129,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         onToggleFavorite = vm::toggleFavorite,
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
+                        epg = epg,
                         listState = channelListState,
                         focusUrl = focusUrl,
                         onPlay = { list, position ->
@@ -139,6 +148,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         },
                         favorites = favorites,
                         onToggleFavorite = vm::toggleFavorite,
+                        epg = epg,
                         onExit = { playback = null },
                     )
                 }
