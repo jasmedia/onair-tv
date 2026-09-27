@@ -4,7 +4,12 @@ An MVP IPTV player in the spirit of TiviMate. It loads any M3U playlist (includi
 [iptv-org](https://github.com/iptv-org/iptv) lists), shows channels by group and plays them
 full-screen with remote-control zapping.
 
+![OnAir TV channel list on Google TV](docs/screenshot-channels.png)
+
 **Stack:** Kotlin · Jetpack Compose for TV (`androidx.tv:tv-material`) · Media3 ExoPlayer (HLS/DASH/TS) · OkHttp · Coil
+
+> OnAir TV is only a player: it provides no channels or content. You are responsible for the
+> playlists you add and for having the right to watch their streams.
 
 ## Features in this MVP
 
