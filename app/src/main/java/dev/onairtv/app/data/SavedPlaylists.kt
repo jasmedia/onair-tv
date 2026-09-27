@@ -2,22 +2,38 @@ package dev.onairtv.app.data
 
 import java.net.URI
 
-/** A playlist the user has added. Identified by its URL; the name is only for display. */
-data class SavedPlaylist(val name: String, val url: String)
+/**
+ * A playlist the user has added. Identified by its URL; the name is only for display.
+ *
+ * [epgUrl] overrides the XMLTV guide the playlist advertises in its own `#EXTM3U` header; null
+ * means "use whatever the playlist says", which is what iptv-org lists want.
+ */
+data class SavedPlaylist(val name: String, val url: String, val epgUrl: String? = null)
 
 /** Storage format and list operations for saved playlists. Pure, so it can be unit-tested. */
 object SavedPlaylists {
 
-    /** One `name<TAB>url` line per playlist, keeping the order. */
+    /**
+     * One `name<TAB>url` line per playlist, keeping the order, with a third `<TAB>epgUrl` field
+     * when one is set. The two-field form is a strict prefix of the three-field one, so playlists
+     * stored by older versions decode unchanged and need no migration.
+     */
     fun encode(playlists: List<SavedPlaylist>): String =
-        playlists.joinToString("\n") { "${it.name.clean()}\t${it.url.clean()}" }
+        playlists.joinToString("\n") { playlist ->
+            val epg = playlist.epgUrl?.clean()?.ifEmpty { null }
+            "${playlist.name.clean()}\t${playlist.url.clean()}" + (epg?.let { "\t$it" } ?: "")
+        }
 
     fun decode(text: String?): List<SavedPlaylist> =
         text.orEmpty().lineSequence().mapNotNull { line ->
-            val tab = line.indexOf('\t')
-            if (tab < 0) return@mapNotNull null
-            val url = line.substring(tab + 1).trim()
-            if (url.isEmpty()) null else SavedPlaylist(line.substring(0, tab).trim(), url)
+            val parts = line.split('\t')
+            if (parts.size < 2) return@mapNotNull null
+            val url = parts[1].trim()
+            if (url.isEmpty()) null else SavedPlaylist(
+                name = parts[0].trim(),
+                url = url,
+                epgUrl = parts.getOrNull(2)?.trim()?.ifEmpty { null },
+            )
         }.distinctBy { it.url }.toList()
 
     /** Replaces the playlist with the same URL (keeping its position), or appends it. */

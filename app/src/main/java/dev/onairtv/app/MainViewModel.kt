@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.onairtv.app.data.Channel
+import dev.onairtv.app.data.EpgGuide
 import dev.onairtv.app.data.PlaylistRepository
 import dev.onairtv.app.data.SavedPlaylist
 import dev.onairtv.app.data.SavedPlaylists
@@ -40,6 +41,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Saved playlists, in the order they were added. */
     val playlists: StateFlow<List<SavedPlaylist>> = _playlists.asStateFlow()
 
+    private val _guide = MutableStateFlow(EpgGuide.EMPTY)
+    /**
+     * Programmes for the channels of the playlist being shown. Deliberately a second flow rather
+     * than a field on [PlaylistState.Ready]: a guide that fails to load cannot then break, delay
+     * or re-render the playlist.
+     */
+    val guide: StateFlow<EpgGuide> = _guide.asStateFlow()
+
     private val _activeUrl = MutableStateFlow(repo.playlistUrl)
     /** URL of the playlist being shown. */
     val activeUrl: StateFlow<String?> = _activeUrl.asStateFlow()
@@ -47,17 +56,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val lastChannelUrl: String? get() = repo.lastChannelUrl
 
     private var loadJob: Job? = null
+    private var epgJob: Job? = null
 
     init {
         val url = repo.playlistUrl
         if (url == null) _state.value = PlaylistState.NotConfigured else open(url)
     }
 
-    /** Saves the playlist (or renames it, if the URL is already saved) and switches to it. */
-    fun addPlaylist(url: String, name: String? = null) {
+    /**
+     * Saves the playlist (or renames it, if the URL is already saved) and switches to it.
+     *
+     * [epgUrl] *replaces* whatever guide URL was stored for this playlist, so passing nothing
+     * clears an override the user had set.
+     */
+    fun addPlaylist(url: String, name: String? = null, epgUrl: String? = null) {
         val trimmed = url.trim()
         val displayName = name?.takeIf { it.isNotBlank() } ?: SavedPlaylists.defaultName(trimmed)
-        val playlist = SavedPlaylist(displayName, trimmed)
+        val playlist = SavedPlaylist(displayName, trimmed, epgUrl?.trim()?.ifEmpty { null })
         updatePlaylists(SavedPlaylists.upsert(_playlists.value, playlist))
         open(trimmed)
     }
@@ -77,6 +92,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 open(next.url)
             } else {
                 loadJob?.cancel()
+                clearEpg()
                 setActive(null)
                 _state.value = PlaylistState.NotConfigured
             }
@@ -87,10 +103,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         repo.playlistUrl?.let(::open)
     }
 
+    /** Reloads the guide for the playlist being shown, e.g. once its programmes have run out. */
+    fun refreshEpg() {
+        val url = _activeUrl.value ?: return
+        val ready = _state.value as? PlaylistState.Ready ?: return
+        startEpg(url, ready.channels)
+    }
+
     /** Shows the cached copy of the playlist instantly (if any), then refreshes it from the network. */
     private fun open(url: String) {
         setActive(url)
         loadJob?.cancel()
+        clearEpg() // never show the previous playlist's programmes against this one's channels
         _state.value = PlaylistState.Loading
         loadJob = viewModelScope.launch {
             val cached = runCatching { repo.loadCached(url) }.getOrNull()
@@ -104,7 +128,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 if (cached.isNullOrEmpty()) _state.value = PlaylistState.Failed(e.readable())
             }
+
+            // Whether the refresh succeeded, failed, or only the cache was there.
+            (_state.value as? PlaylistState.Ready)?.let { startEpg(url, it.channels) }
         }
+    }
+
+    /**
+     * Loads the guide for [playlistUrl] in the background. Launched straight into viewModelScope
+     * rather than under loadJob, so the next [open] cancels it explicitly instead of inheriting it.
+     */
+    private fun startEpg(playlistUrl: String, channels: List<Channel>) {
+        epgJob?.cancel()
+        epgJob = viewModelScope.launch {
+            try {
+                val saved = _playlists.value.firstOrNull { it.url == playlistUrl }
+                // A URL the user typed beats the one the playlist advertises.
+                val epgUrl = saved?.epgUrl ?: repo.detectedEpgUrl(playlistUrl) ?: return@launch
+                repo.epgGuide(epgUrl, channels)?.let { _guide.value = it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // No guide just means the rows keep showing their groups.
+            }
+        }
+    }
+
+    private fun clearEpg() {
+        epgJob?.cancel()
+        epgJob = null
+        _guide.value = EpgGuide.EMPTY
     }
 
     private fun setActive(url: String?) {

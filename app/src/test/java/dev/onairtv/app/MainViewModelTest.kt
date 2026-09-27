@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import dev.onairtv.app.data.Channel
+import dev.onairtv.app.data.EpgGuide
 import dev.onairtv.app.data.PlaylistRepository
 import dev.onairtv.app.data.SavedPlaylist
 import kotlinx.coroutines.Dispatchers
@@ -15,10 +16,13 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -49,6 +53,33 @@ class MainViewModelTest {
     private fun m3u(vararg names: String, group: String = "G") = buildString {
         appendLine("#EXTM3U")
         names.forEach { appendLine("#EXTINF:-1 group-title=\"$group\",$it\nhttp://stream.example/$it.m3u8") }
+    }
+
+    /** Like [m3u], but advertising an XMLTV guide the way iptv-org lists do. */
+    private fun m3uWithEpg(vararg names: String, epgPath: String = "/g.xml") = buildString {
+        appendLine("#EXTM3U url-tvg=\"${url(epgPath)}\"")
+        names.forEach {
+            appendLine("#EXTINF:-1 tvg-id=\"$it.x\" group-title=\"G\",$it\nhttp://stream.example/$it.m3u8")
+        }
+    }
+
+    private fun xmltv(channelId: String, title: String) = """
+        <tv>
+          <channel id="$channelId"><display-name>$channelId</display-name></channel>
+          <programme start="$START" stop="$STOP" channel="$channelId"><title>$title</title></programme>
+        </tv>
+    """.trimIndent()
+
+    /**
+     * Answers by path rather than in order: the playlist and the guide are fetched by separate
+     * jobs, and [MockWebServer.enqueue] is strictly FIFO.
+     */
+    private fun serve(vararg responses: Pair<String, MockResponse>) {
+        val byPath = responses.toMap()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                byPath[request.path?.substringBefore('?')] ?: MockResponse().setResponseCode(404)
+        }
     }
 
     private fun url(path: String) = server.url(path).toString()
@@ -337,14 +368,111 @@ class MainViewModelTest {
         assertNull(PlaylistRepository(app).playlistUrl)
     }
 
-    private fun channel(url: String) = Channel(
+    // ---- EPG ------------------------------------------------------------------------------
+
+    @Test
+    fun aPlaylistAdvertisingAGuideLoadsIt() {
+        seed(url("/a.m3u"))
+        serve(
+            "/a.m3u" to ok(m3uWithEpg("One")),
+            "/g.xml" to ok(xmltv("One.x", "The Show")),
+        )
+
+        val vm = MainViewModel(app)
+        vm.awaitIdle()
+
+        assertEquals(listOf("One"), vm.channelNames())
+        val channel = (vm.state.value as PlaylistState.Ready).channels.single()
+        assertEquals("The Show", vm.guide.value.nowNext(channel, NOW)?.now?.title)
+    }
+
+    @Test
+    fun aPlaylistWithoutAGuideMakesNoEpgRequest() {
+        seed(url("/a.m3u"))
+        server.enqueue(ok(m3u("One")))
+
+        val vm = MainViewModel(app)
+        vm.awaitIdle()
+
+        assertEquals(1, server.requestCount) // the playlist, and nothing else
+        assertEquals(EpgGuide.EMPTY, vm.guide.value)
+    }
+
+    @Test
+    fun aFailingGuideLeavesThePlaylistReady() {
+        seed(url("/a.m3u"))
+        serve(
+            "/a.m3u" to ok(m3uWithEpg("One")),
+            "/g.xml" to error(),
+        )
+
+        val vm = MainViewModel(app)
+        vm.awaitIdle()
+
+        assertEquals(listOf("One"), vm.channelNames())
+        assertTrue(vm.guide.value.isEmpty)
+    }
+
+    @Test
+    fun switchingPlaylistsDropsThePreviousGuide() {
+        val a = url("/a.m3u")
+        val b = url("/b.m3u")
+        seed(b, name = "B")
+        seed(a, name = "A")
+        serve(
+            "/a.m3u" to ok(m3uWithEpg("One")),
+            "/b.m3u" to ok(m3u("Two")), // no guide of its own
+            "/g.xml" to ok(xmltv("One.x", "The Show")),
+        )
+        val vm = MainViewModel(app)
+        vm.awaitIdle()
+        assertNotNull(vm.guide.value.nowNext(channel("http://x", tvgId = "One.x"), NOW))
+
+        vm.selectPlaylist(SavedPlaylist("B", b))
+        vm.awaitIdle()
+
+        assertEquals(listOf("Two"), vm.channelNames())
+        assertEquals(EpgGuide.EMPTY, vm.guide.value)
+    }
+
+    @Test
+    fun aSavedEpgUrlBeatsTheOneInTheHeader() = runBlocking {
+        val url = url("/a.m3u")
+        PlaylistRepository(app).apply {
+            playlists = listOf(SavedPlaylist("A", url, epgUrl = url("/override.xml")))
+            playlistUrl = url
+        }
+        serve(
+            "/a.m3u" to ok(m3uWithEpg("One")),
+            "/g.xml" to ok(xmltv("One.x", "From The Header")),
+            "/override.xml" to ok(xmltv("One.x", "From The Override")),
+        )
+
+        val vm = MainViewModel(app)
+        vm.awaitIdle()
+
+        val channel = (vm.state.value as PlaylistState.Ready).channels.single()
+        assertEquals("From The Override", vm.guide.value.nowNext(channel, NOW)?.now?.title)
+    }
+
+    private fun channel(url: String, tvgId: String? = null) = Channel(
         index = 0,
         name = url,
         url = url,
         logo = null,
-        tvgId = null,
+        tvgId = tvgId,
         groups = listOf("G"),
         userAgent = null,
         referrer = null,
     )
+
+    private companion object {
+        /** A programme running from an hour ago until an hour from now, wherever the test runs. */
+        val NOW = System.currentTimeMillis()
+        val START = xmltvTime(NOW - 3_600_000)
+        val STOP = xmltvTime(NOW + 3_600_000)
+
+        fun xmltvTime(millis: Long): String =
+            java.text.SimpleDateFormat("yyyyMMddHHmmss Z", java.util.Locale.US).format(java.util.Date(millis))
+    }
 }

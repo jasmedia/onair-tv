@@ -82,6 +82,7 @@ fun ChannelsScreen(
     onToggleFavorite: (Channel) -> Unit,
     query: String,
     onQueryChange: (String) -> Unit,
+    epg: EpgSource,
     listState: LazyListState,
     focusUrl: String?,
     onPlay: (channels: List<Channel>, position: Int) -> Unit,
@@ -213,6 +214,7 @@ fun ChannelsScreen(
                             channel = channel,
                             number = position + 1,
                             isFavorite = channel.url in favorites,
+                            epg = epg,
                             onClick = { onPlay(visible, position) },
                             onLongClick = { onToggleFavorite(channel) },
                             modifier = if (position == initialFocusIndex) {
@@ -231,6 +233,7 @@ internal fun ChannelRow(
     channel: Channel,
     number: Int,
     isFavorite: Boolean,
+    epg: EpgSource,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -267,10 +270,12 @@ internal fun ChannelRow(
             Text("$number  ${channel.name}", maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = {
-            Text(
-                channel.groups.joinToString(" · "),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            // The guide wins this slot when there is any: the selected group is already in the
+            // screen header, so repeating it on every row says little.
+            NowNextSupporting(
+                nowNext = rememberNowNext(epg, channel),
+                at = epg.clock.value,
+                fallback = channel.groups.joinToString(" · "),
             )
         },
         trailingContent = if (isFavorite) {

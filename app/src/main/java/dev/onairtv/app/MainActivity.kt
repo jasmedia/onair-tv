@@ -19,12 +19,15 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.darkColorScheme
 import dev.onairtv.app.data.Channel
+import dev.onairtv.app.data.SavedPlaylist
 import dev.onairtv.app.ui.ChannelsScreen
+import dev.onairtv.app.ui.EpgSource
 import dev.onairtv.app.ui.ErrorScreen
 import dev.onairtv.app.ui.LoadingScreen
 import dev.onairtv.app.ui.PlayerScreen
 import dev.onairtv.app.ui.PlaylistsScreen
 import dev.onairtv.app.ui.SetupScreen
+import dev.onairtv.app.ui.rememberEpgClock
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,11 +50,19 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
 
+    // No `by` and no read of clock.value here: a tick must recompose the rows showing a programme,
+    // not this whole tree.
+    val guide by vm.guide.collectAsStateWithLifecycle()
+    val clock = rememberEpgClock()
+    val epg = remember(guide, clock) { EpgSource(guide, clock) }
+
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val activeUrl by vm.activeUrl.collectAsStateWithLifecycle()
 
     var showPlaylists by rememberSaveable { mutableStateOf(false) }
     var showSetup by rememberSaveable { mutableStateOf(false) }
+    // Non-null when the setup screen is editing an existing playlist rather than adding one.
+    var editPlaylist by remember { mutableStateOf<SavedPlaylist?>(null) }
     var selectedGroup by rememberSaveable { mutableStateOf(ALL_CHANNELS) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var playback by remember { mutableStateOf<Playback?>(null) }
@@ -67,20 +78,28 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
     }
     val onPlaylistOpened = {
         showSetup = false
+        editPlaylist = null
         showPlaylists = false
         resetBrowsing()
     }
 
     when (val s = state) {
         PlaylistState.NotConfigured -> SetupScreen(
-            onSubmit = { url, name -> vm.addPlaylist(url, name); onPlaylistOpened() },
+            onSubmit = { url, name, epgUrl ->
+                vm.addPlaylist(url, name, epgUrl)
+                onPlaylistOpened()
+            },
             onCancel = null,
         )
 
         else -> if (showSetup) {
             SetupScreen(
-                onSubmit = { url, name -> vm.addPlaylist(url, name); onPlaylistOpened() },
-                onCancel = { showSetup = false },
+                onSubmit = { url, name, epgUrl ->
+                    vm.addPlaylist(url, name, epgUrl)
+                    onPlaylistOpened()
+                },
+                onCancel = { showSetup = false; editPlaylist = null },
+                initial = editPlaylist,
             )
         } else if (showPlaylists) {
             PlaylistsScreen(
@@ -94,11 +113,15 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         showPlaylists = false
                     }
                 },
+                onEditEpg = { playlist ->
+                    editPlaylist = playlist
+                    showSetup = true
+                },
                 onRemove = { playlist ->
                     if (playlist.url == activeUrl) resetBrowsing()
                     vm.removePlaylist(playlist)
                 },
-                onAdd = { showSetup = true },
+                onAdd = { editPlaylist = null; showSetup = true },
                 onBack = { showPlaylists = false },
             )
         } else when (s) {
@@ -121,6 +144,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         onToggleFavorite = vm::toggleFavorite,
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
+                        epg = epg,
                         listState = channelListState,
                         focusUrl = focusUrl,
                         onPlay = { list, position ->
@@ -139,6 +163,7 @@ private fun OnAirTvApp(vm: MainViewModel = viewModel()) {
                         },
                         favorites = favorites,
                         onToggleFavorite = vm::toggleFavorite,
+                        epg = epg,
                         onExit = { playback = null },
                     )
                 }
